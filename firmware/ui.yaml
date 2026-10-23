@@ -110,24 +110,21 @@ interval:
     then:
       - script.execute: refresh
 
-  # Today's chart: one bar per 15 min, green up = exported, red down = imported.
-  # ponytail: kept in RAM, a reboot restarts the day's chart empty
+  # Last 24 h chart, scrolling: one bar per 15 min, newest on the right.
+  # Green up = exported, red down = imported. Hour labels follow the bars.
+  # ponytail: kept in RAM, a reboot restarts the chart empty
   - interval: 30s
     startup_delay: 5s
     then:
       - lambda: |-
-          static const int N = 96, PITCH = 8, BAR_W = 6, HALF = 46;
-          static lv_obj_t *bars[N];
+          static const int N = 96, PITCH = 8, BAR_W = 6, HALF = 46, SLOT_S = 900;
+          static lv_obj_t *bars[N], *hours[5];
           static float sum[N], cnt[N];
-          static int last_slot = -1;
+          static int32_t stamp[N];  // absolute 15-min slot stored in each ring cell
           auto now = id(ha_time).now();
-          auto draw = [&](int i) {
-            float v = sum[i] / cnt[i] / ${chart_full_scale_w};
-            int h = std::max(2, (int) (std::min(1.0f, std::fabs(v)) * HALF));
-            lv_obj_set_style_bg_color(bars[i], lv_color_hex(v >= 0 ? ${c_green} : ${c_red}), 0);
-            lv_obj_set_size(bars[i], BAR_W, h);
-            lv_obj_set_pos(bars[i], i * PITCH, v >= 0 ? HALF - h : HALF);
-          };
+          if (!now.is_valid()) return;
+          int32_t cur = now.timestamp / SLOT_S;
+          lv_obj_t *panel = lv_obj_get_parent(id(chart_box));
           if (bars[0] == nullptr) {
             for (int i = 0; i < N; i++) {
               bars[i] = lv_obj_create(id(chart_box));
@@ -136,28 +133,55 @@ interval:
               lv_obj_set_style_radius(bars[i], 2, 0);
               lv_obj_remove_flag(bars[i], LV_OBJ_FLAG_CLICKABLE);
               lv_obj_set_size(bars[i], BAR_W, 0);
+              stamp[i] = -1;
             }
-            if (${chart_demo} && now.is_valid()) {
-              for (int i = 0; i < (now.hour * 60 + now.minute) / 15; i++) {
-                float t = i / 4.0f, sun = std::sin(3.14159f * (t - 7) / 11);
-                sum[i] = 30000 * std::max(0.0f, sun) - 3500 + 1500 * std::sin(i * 1.7f);
-                cnt[i] = 1;
-                draw(i);
+            for (auto &h : hours) {
+              h = lv_label_create(panel);
+              lv_obj_set_style_text_font(h, id(f_small), 0);
+              lv_obj_set_style_text_color(h, lv_color_hex(${c_muted}), 0);
+              lv_obj_set_y(h, 128);
+            }
+            if (${chart_demo}) {
+              for (int k = 1; k < N; k++) {
+                int32_t a = cur - k;
+                auto t = ESPTime::from_epoch_local(a * SLOT_S);
+                float hr = t.hour + t.minute / 60.0f, sun = std::sin(3.14159f * (hr - 7) / 11);
+                stamp[a % N] = a;
+                sum[a % N] = 30000 * std::max(0.0f, sun) - 3500 + 1500 * std::sin(a * 1.7f);
+                cnt[a % N] = 1;
               }
             }
           }
           float ex = id(export_w).state, im = id(import_w).state;
-          if (!now.is_valid()) return;
-          int slot = (now.hour * 60 + now.minute) / 15;
-          lv_obj_set_x(id(chart_now), slot * PITCH + BAR_W / 2);
-          if (std::isnan(ex) || std::isnan(im)) return;
-          if (slot < last_slot) {  // new day
-            for (int i = 0; i < N; i++) { sum[i] = 0; cnt[i] = 0; lv_obj_set_size(bars[i], BAR_W, 0); }
+          if (!std::isnan(ex) && !std::isnan(im)) {
+            int c = cur % N;
+            if (stamp[c] != cur) { stamp[c] = cur; sum[c] = 0; cnt[c] = 0; }
+            sum[c] += ex - im;
+            cnt[c] += 1;
           }
-          last_slot = slot;
-          sum[slot] += ex - im;
-          cnt[slot] += 1;
-          draw(slot);
+          int nh = 0;
+          for (int i = 0; i < N; i++) {
+            int32_t a = cur - (N - 1) + i;
+            int c = a % N;
+            if (stamp[c] == a && cnt[c] > 0) {
+              float v = sum[c] / cnt[c] / ${chart_full_scale_w};
+              int h = std::max(2, (int) (std::min(1.0f, std::fabs(v)) * HALF));
+              lv_obj_set_style_bg_color(bars[i], lv_color_hex(v >= 0 ? ${c_green} : ${c_red}), 0);
+              lv_obj_set_size(bars[i], BAR_W, h);
+              lv_obj_set_pos(bars[i], i * PITCH, v >= 0 ? HALF - h : HALF);
+            } else {
+              lv_obj_set_size(bars[i], BAR_W, 0);
+            }
+            // hour label every 6 h, kept clear of the "ora" label on the right
+            auto t = ESPTime::from_epoch_local(a * SLOT_S);
+            if (t.minute == 0 && t.hour % 6 == 0 && i < N - 6 && nh < 5) {
+              lv_label_set_text(hours[nh], std::to_string(t.hour).c_str());
+              lv_obj_set_x(hours[nh], 6 + i * PITCH - (t.hour < 10 ? 4 : 8));
+              lv_obj_remove_flag(hours[nh], LV_OBJ_FLAG_HIDDEN);
+              nh++;
+            }
+          }
+          for (int k = nh; k < 5; k++) lv_obj_add_flag(hours[k], LV_OBJ_FLAG_HIDDEN);
 
   # Night: after 10 min untouched, backlight off (a touch wakes it, see script wake)
   - interval: 30s
@@ -525,7 +549,7 @@ lvgl:
             height: 150
             scrollable: false
             widgets:
-              - label: { x: 14, y: 8, text: "Oggi con la rete", text_font: f_body }
+              - label: { x: 14, y: 8, text: "Ultime 24 ore con la rete", text_font: f_body }
               - obj:
                   styles: st_flat
                   align: TOP_RIGHT
@@ -540,6 +564,7 @@ lvgl:
                     - label: { text: "dato  ", text_font: f_small, styles: st_muted }
                     - obj: { width: 12, height: 12, radius: 6, bg_color: $c_red, border_width: 0 }
                     - label: { text: "comprato", text_font: f_small, styles: st_muted }
+              - label: { align: TOP_RIGHT, x: -10, y: 128, text: "ora", text_font: f_small, styles: st_muted }
               - obj:
                   id: chart_box
                   styles: st_flat
@@ -550,12 +575,6 @@ lvgl:
                   scrollable: false
                   widgets:
                     - obj: { x: 0, y: 46, width: 768, height: 1, bg_color: 0x3A434D, bg_opa: COVER, border_width: 0, radius: 0 }
-                    - obj: { id: chart_now, x: 0, y: 0, width: 2, height: 92, bg_color: 0xFFFFFF, bg_opa: 45%, border_width: 0, radius: 0 }
-              - label: { x: 6, y: 128, text: "0", text_font: f_small, styles: st_muted }
-              - label: { x: 190, y: 128, text: "6", text_font: f_small, styles: st_muted }
-              - label: { x: 380, y: 128, text: "12", text_font: f_small, styles: st_muted }
-              - label: { x: 572, y: 128, text: "18", text_font: f_small, styles: st_muted }
-              - label: { x: 758, y: 128, text: "24", text_font: f_small, styles: st_muted }
 
         # ── Tiles: 4 slots filled by the modules in tiles/ ──
         - obj:

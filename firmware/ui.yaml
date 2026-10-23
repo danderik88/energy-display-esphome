@@ -112,7 +112,7 @@ interval:
 
   # Last 24 h chart, scrolling: one bar per 15 min, newest on the right.
   # Green up = exported, red down = imported. Hour labels follow the bars.
-  # ponytail: kept in RAM, a reboot restarts the chart empty
+  # Saved to flash once per completed slot (~96 small writes/day), restored after a reboot.
   - interval: 30s
     startup_delay: 5s
     then:
@@ -121,6 +121,9 @@ interval:
           static lv_obj_t *bars[N], *hours[5];
           static float sum[N], cnt[N];
           static int32_t stamp[N];  // absolute 15-min slot stored in each ring cell
+          struct Saved { int32_t stamp[N]; float avg[N]; };
+          static ESPPreferenceObject pref;
+          static int32_t saved_slot = -1;
           auto now = id(ha_time).now();
           if (!now.is_valid()) return;
           int32_t cur = now.timestamp / SLOT_S;
@@ -141,7 +144,19 @@ interval:
               lv_obj_set_style_text_color(h, lv_color_hex(${c_muted}), 0);
               lv_obj_set_y(h, 128);
             }
-            if (${chart_demo}) {
+            pref = global_preferences->make_preference<Saved>(fnv1_hash("chart24h"));
+            Saved sv;
+            int restored = 0;
+            if (pref.load(&sv)) {
+              for (int i = 0; i < N; i++) {
+                if (sv.stamp[i] <= cur - N || sv.stamp[i] > cur || std::isnan(sv.avg[i])) continue;
+                stamp[i] = sv.stamp[i]; sum[i] = sv.avg[i]; cnt[i] = 1;
+                restored++;
+              }
+            }
+            ESP_LOGI("chart", "restored %d slots from flash", restored);
+            saved_slot = cur;
+            if (${chart_demo} && restored == 0) {
               for (int k = 1; k < N; k++) {
                 int32_t a = cur - k;
                 auto t = ESPTime::from_epoch_local(a * SLOT_S);
@@ -158,6 +173,15 @@ interval:
             if (stamp[c] != cur) { stamp[c] = cur; sum[c] = 0; cnt[c] = 0; }
             sum[c] += ex - im;
             cnt[c] += 1;
+          }
+          if (cur != saved_slot) {  // a slot just completed: persist the ring
+            Saved sv;
+            for (int i = 0; i < N; i++) {
+              sv.stamp[i] = cnt[i] > 0 ? stamp[i] : -1;
+              sv.avg[i] = cnt[i] > 0 ? sum[i] / cnt[i] : NAN;
+            }
+            pref.save(&sv);
+            saved_slot = cur;
           }
           int nh = 0;
           for (int i = 0; i < N; i++) {

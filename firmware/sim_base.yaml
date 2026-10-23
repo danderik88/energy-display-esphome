@@ -1,0 +1,74 @@
+## Desktop simulator base (SDL window, fake values). Needs SDL2. Included by sim_*.yaml.
+## Env: SIM_RED=1 red scenario, SIM_SAVER=1 open the screensaver,
+##      SIM_POPUP=1..4 open a tile popup, SIM_SHOT=/path.bmp save a screenshot after ~20 s (then exit).
+
+substitutions:
+  chart_demo: "true"
+
+host:
+
+logger:
+  level: WARN
+
+api:
+
+time:
+  - platform: host
+    id: ha_time
+
+display:
+  - platform: sdl
+    id: sdl_display
+    show_test_card: false
+    dimensions:
+      width: 800
+      height: 480
+
+touchscreen:
+  - platform: sdl
+    on_release:
+      - script.execute: wake
+
+output:
+  - platform: template
+    id: backlight_switch
+    type: binary
+    write_action: []
+
+sensor:
+  - { platform: template, id: export_w, lambda: "return getenv(\"SIM_RED\") ? 0 : 6200;" }
+  - { platform: template, id: import_w, lambda: "return getenv(\"SIM_RED\") ? 2834 : 0;" }
+  - { platform: template, id: load_w, lambda: "return 3100;" }
+  - { platform: template, id: batt_pct, lambda: "return 64;" }
+  - { platform: template, id: fc_today_kwh, lambda: "return 110;" }
+  - { platform: template, id: fc_tomorrow_kwh, lambda: "return 86;" }
+  - { platform: template, id: weather_c, lambda: "return 14.2;" }
+
+text_sensor:
+  - { platform: template, id: weather_cond, lambda: 'return {"partlycloudy"};' }
+
+interval:
+  - interval: 2s
+    then:
+      - lambda: |-
+          static int n = 0;
+          n++;
+          if (n == 1) {
+            id(tile_demo_1).execute(); id(tile_demo_2).execute();
+            id(tile_demo_3).execute(); id(tile_demo_4).execute();
+          }
+          if (n == 9 && getenv("SIM_SAVER")) lv_screen_load(id(page_saver)->obj);
+          if (n == 4 && getenv("SIM_POPUP")) id(popup_open)->execute(atoi(getenv("SIM_POPUP")));
+          const char *shot = getenv("SIM_SHOT");
+          if (n != 10 || shot == nullptr) return;
+          SDL_Renderer *r = nullptr;
+          for (int wid = 1; wid < 16 && r == nullptr; wid++)
+            if (SDL_Window *win = SDL_GetWindowFromID(wid)) r = SDL_GetRenderer(win);
+          if (r == nullptr) { ESP_LOGE("sim", "no SDL renderer"); exit(1); }
+          int w, h;
+          SDL_GetRendererOutputSize(r, &w, &h);
+          SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+          SDL_RenderReadPixels(r, nullptr, SDL_PIXELFORMAT_ARGB8888, s->pixels, s->pitch);
+          SDL_SaveBMP(s, shot);
+          SDL_FreeSurface(s);
+          exit(0);

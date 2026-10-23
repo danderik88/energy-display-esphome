@@ -1,0 +1,27 @@
+## Tile: solar production today and grid exchange (uses fc_today_kwh / fc_tomorrow_kwh from the device file)
+## vars: slot (1-4), pv_today, exported_today, imported_today (kWh)
+sensor:
+  - { platform: homeassistant, id: pv_today, entity_id: "${pv_today}" }
+  - { platform: homeassistant, id: pv_exp, entity_id: "${exported_today}" }
+  - { platform: homeassistant, id: pv_imp, entity_id: "${imported_today}" }
+
+script:
+  - id: tile_fill_${slot}
+    then:
+      - lambda: |-
+          float tm = id(fc_tomorrow_kwh).state;
+          ui::tile(${slot}, "\U000F05A8", 0xFFC531, ui::fmt(id(pv_today).state, "%.0f kWh"),
+                   std::isnan(tm) ? "Sole oggi" : tm >= ${sunny_tomorrow_kwh} ? "Domani: sole" : "Domani: nuvole");
+  - id: tile_popup_${slot}
+    then:
+      - lambda: |-
+          ui::popup("\U000F05A8", 0xFFC531, "Sole e rete", ui::fmt(id(pv_today).state, "%.0f kWh"),
+              "Prodotto oggi\nDato alla rete oggi\nComprato oggi\nPrevisione oggi\nPrevisione domani",
+              ui::fmt(id(pv_today).state, "%.0f kWh") + "\n" + ui::fmt(id(pv_exp).state, "%.0f kWh") + "\n"
+                  + ui::fmt(id(pv_imp).state, "%.0f kWh") + "\n" + ui::fmt(id(fc_today_kwh).state, "%.0f kWh") + "\n"
+                  + ui::fmt(id(fc_tomorrow_kwh).state, "%.0f kWh"),
+              "Quella che non usiamo la vendiamo a circa ${price_sell_cent} centesimi, quella che compriamo "
+              "costa circa ${price_buy_cent}: conviene accendere i carichi grossi quando il semaforo è verde.");
+  - id: tile_demo_${slot}
+    then:
+      - lambda: 'id(pv_today).publish_state(82.4); id(pv_exp).publish_state(41.3); id(pv_imp).publish_state(12.8);'

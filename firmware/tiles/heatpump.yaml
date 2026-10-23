@@ -1,0 +1,30 @@
+## Tile: heat pump (any integration exposing power, COP and flow temperature)
+## vars: slot (1-4), power (W), cop, flow_temp (°C), energy_today (kWh)
+sensor:
+  - { platform: homeassistant, id: hp_power, entity_id: "${power}" }
+  - { platform: homeassistant, id: hp_cop, entity_id: "${cop}" }
+  - { platform: homeassistant, id: hp_flow, entity_id: "${flow_temp}" }
+  - { platform: homeassistant, id: hp_energy, entity_id: "${energy_today}" }
+
+script:
+  - id: tile_fill_${slot}
+    then:
+      - lambda: |-
+          float p = id(hp_power).state;
+          bool on = !std::isnan(p) && p > 50;
+          ui::tile(${slot}, "\U000F1A43", 0x4FC3B0, on ? ui::fmt(p / 1000, "%.1f kW") : "Ferma",
+                   on ? "COP " + ui::fmt(id(hp_cop).state, "%.1f") : "Pompa di calore");
+  - id: tile_popup_${slot}
+    then:
+      - lambda: |-
+          ui::popup("\U000F1A43", 0x4FC3B0, "Pompa di calore", ui::fmt(id(hp_power).state / 1000, "%.1f kW"),
+              "Potenza assorbita\nEfficienza (COP)\nTemperatura mandata\nConsumo oggi",
+              ui::fmt(id(hp_power).state / 1000, "%.1f kW") + "\n" + ui::fmt(id(hp_cop).state, "%.1f") + "\n"
+                  + ui::fmt(id(hp_flow).state, "%.0f°C") + "\n" + ui::fmt(id(hp_energy).state, "%.1f kWh"),
+              "Con COP 3 ogni kWh di corrente diventa 3 kWh di calore. Quando il semaforo è verde "
+              "la pompa di calore scalda col sole: è il momento di fare l'acqua calda o alzare un grado.");
+  - id: tile_demo_${slot}
+    then:
+      - lambda: |-
+          id(hp_power).publish_state(1450); id(hp_cop).publish_state(3.6);
+          id(hp_flow).publish_state(34); id(hp_energy).publish_state(8.2);

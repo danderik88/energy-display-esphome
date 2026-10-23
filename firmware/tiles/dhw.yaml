@@ -1,0 +1,23 @@
+## Tile: domestic hot water tank
+## vars: slot (1-4), temp (°C), pump (% or 0/1, 0 = idle), source (text, e.g. "caldaia a pellet")
+sensor:
+  - { platform: homeassistant, id: dhw_temp, entity_id: "${temp}" }
+  - { platform: homeassistant, id: dhw_pump, entity_id: "${pump}" }
+
+script:
+  - id: tile_fill_${slot}
+    then:
+      - lambda: 'ui::tile(${slot}, "\U000F1A85", 0x4FA3F7, ui::fmt(id(dhw_temp).state, "%.0f°C"), "Acqua calda");'
+  - id: tile_popup_${slot}
+    then:
+      - lambda: |-
+          float pump = id(dhw_pump).state;
+          ui::popup("\U000F1A85", 0x4FA3F7, "Acqua calda", ui::fmt(id(dhw_temp).state, "%.0f°C"),
+              "Temperatura del boiler\nPompa di carico\nScaldata da",
+              ui::fmt(id(dhw_temp).state, "%.0f°C") + "\n"
+                  + (std::isnan(pump) ? "--" : pump > 0 ? "in funzione" : "ferma") + "\n${source}",
+              "L'acqua calda di casa sta nel boiler e si riscalda quando si raffredda: docce brevi "
+              "e lavaggi a 30-40 °C fanno risparmiare energia.");
+  - id: tile_demo_${slot}
+    then:
+      - lambda: 'id(dhw_temp).publish_state(58); id(dhw_pump).publish_state(0);'

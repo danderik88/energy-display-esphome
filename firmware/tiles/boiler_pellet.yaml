@@ -1,0 +1,34 @@
+## Tile: pellet boiler (tested with a Froeling via the Froeling Connect integration)
+## vars: slot (1-4), temp, state, flue, flow1, flow2, maint (entity ids),
+##       circuit1_name, circuit2_name (popup labels, e.g. "Mandata casa")
+sensor:
+  - { platform: homeassistant, id: pb_temp, entity_id: "${temp}" }
+  - { platform: homeassistant, id: pb_flue, entity_id: "${flue}" }
+  - { platform: homeassistant, id: pb_flow1, entity_id: "${flow1}" }
+  - { platform: homeassistant, id: pb_flow2, entity_id: "${flow2}" }
+  - { platform: homeassistant, id: pb_maint, entity_id: "${maint}" }
+text_sensor:
+  - { platform: homeassistant, id: pb_state, entity_id: "${state}" }
+
+script:
+  - id: tile_fill_${slot}
+    then:
+      - lambda: |-
+          std::string st = id(pb_state).state;
+          ui::tile(${slot}, "\U000F0238", 0xFF8A3D, ui::fmt(id(pb_temp).state, "%.0f°C"), ui::bad(st) ? "Caldaia" : st);
+  - id: tile_popup_${slot}
+    then:
+      - lambda: |-
+          std::string st = id(pb_state).state;
+          ui::popup("\U000F0238", 0xFF8A3D, "Caldaia a pellet", ui::fmt(id(pb_temp).state, "%.0f°C"),
+              "Stato\nTemperatura fumi\n${circuit1_name}\n${circuit2_name}\nOre dalla manutenzione",
+              (ui::bad(st) ? std::string("--") : st) + "\n" + ui::fmt(id(pb_flue).state, "%.0f°C") + "\n"
+                  + ui::fmt(id(pb_flow1).state, "%.0f°C") + "\n" + ui::fmt(id(pb_flow2).state, "%.0f°C") + "\n"
+                  + ui::fmt(id(pb_maint).state, "%.0f h"),
+              "La caldaia brucia pellet e scalda l'accumulatore, che manda acqua calda all'impianto di "
+              "riscaldamento. \"Manten. brace\" vuol dire che è in pausa: tiene viva la brace per ripartire subito.");
+  - id: tile_demo_${slot}
+    then:
+      - lambda: |-
+          id(pb_temp).publish_state(62); id(pb_flue).publish_state(77); id(pb_flow1).publish_state(29);
+          id(pb_flow2).publish_state(31); id(pb_maint).publish_state(1792); id(pb_state).publish_state("Manten. brace");

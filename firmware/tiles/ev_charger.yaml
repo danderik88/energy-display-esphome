@@ -1,0 +1,27 @@
+## Tile: electric car charging (wallbox or a smart plug with power metering on a dedicated line)
+## vars: slot (1-4), power (W), energy (kWh, session or today)
+sensor:
+  - { platform: homeassistant, id: ev_power, entity_id: "${power}" }
+  - { platform: homeassistant, id: ev_energy, entity_id: "${energy}" }
+
+script:
+  - id: tile_fill_${slot}
+    then:
+      - lambda: |-
+          float p = id(ev_power).state;
+          bool on = !std::isnan(p) && p > 100;
+          ui::tile(${slot}, "\U000F05F1", 0x4FA3F7, on ? ui::fmt(p / 1000, "%.1f kW") : ui::fmt(id(ev_energy).state, "%.0f kWh"),
+                   on ? "Auto in carica" : "Auto ferma");
+  - id: tile_popup_${slot}
+    then:
+      - lambda: |-
+          float p = id(ev_power).state;
+          ui::popup("\U000F05F1", 0x4FA3F7, "Ricarica auto", ui::fmt(p / 1000, "%.1f kW"),
+              "Stato\nPotenza\nEnergia caricata",
+              std::string(std::isnan(p) ? "--" : p > 100 ? "in carica" : "ferma") + "\n"
+                  + ui::fmt(p / 1000, "%.1f kW") + "\n" + ui::fmt(id(ev_energy).state, "%.1f kWh"),
+              "Caricare l'auto quando il semaforo è verde usa corrente che altrimenti venderemmo "
+              "a poco: è il modo più economico per fare il pieno.");
+  - id: tile_demo_${slot}
+    then:
+      - lambda: 'id(ev_power).publish_state(2300); id(ev_energy).publish_state(6.4);'

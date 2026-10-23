@@ -1,0 +1,210 @@
+## Energy display — Waveshare ESP32-S3-Touch-LCD-7 (8 MB flash, 8 MB PSRAM)
+##
+## Read-only: states arrive from Home Assistant via the native API (platform: homeassistant).
+## No HA token on the device and no homeassistant.action anywhere.
+## Core entities: substitutions below. Bottom tiles: modules in tiles/, chosen in packages.
+## Map your own entities in the substitutions below. UI and thresholds: ui.yaml.
+## Build: esphome run firmware/energy-display.yaml
+
+substitutions:
+  device_name: energy-display
+  device_friendly: "Energy Display"
+
+  # ── Your Home Assistant entities for the core screen (examples, replace with yours) ──
+  # Grid meter values cover the whole plant: W, positive values
+  e_export_w: sensor.grid_export_power
+  e_import_w: sensor.grid_import_power
+  e_load_w: sensor.house_load_power
+  e_batt_pct: sensor.battery_level
+  e_fc_today_kwh: sensor.energy_production_today
+  e_fc_tomorrow_kwh: sensor.energy_production_tomorrow
+  e_weather_cond: weather.home
+
+packages:
+  ui: !include ui.yaml
+  # ── The 4 tiles at the bottom: pick a module per slot (see tiles/ and README) ──
+  # Example: pellet boiler + hot water + pellet store + solar
+  tile1: !include
+    file: tiles/boiler_pellet.yaml
+    vars:
+      slot: 1
+      temp: sensor.boiler_temperature
+      state: sensor.boiler_state
+      flue: sensor.boiler_flue_gas_temperature
+      flow1: sensor.heating_circuit_1_flow_temperature
+      flow2: sensor.heating_circuit_2_flow_temperature
+      maint: sensor.boiler_hours_since_maintenance
+      circuit1_name: "Mandata zona 1"
+      circuit2_name: "Mandata zona 2"
+  tile2: !include
+    file: tiles/dhw.yaml
+    vars: { slot: 2, temp: sensor.dhw_temperature, pump: sensor.dhw_pump, source: "caldaia a pellet" }
+  tile3: !include
+    file: tiles/pellet_hopper.yaml
+    vars:
+      slot: 3
+      level: sensor.pellet_hopper_level
+      ash_hours: sensor.boiler_hours_until_ash_box
+      used: sensor.pellet_usage_counter
+      total: sensor.pellet_total_consumption
+  tile4: !include
+    file: tiles/pv.yaml
+    vars:
+      slot: 4
+      pv_today: sensor.pv_energy_today
+      exported_today: sensor.grid_exported_energy_today
+      imported_today: sensor.grid_imported_energy_today
+  # Gas boiler instead:   tiles/boiler_gas.yaml  (flow_temp, flame, modulation, gas_today, pressure)
+  # Heat pump instead:    tiles/heatpump.yaml    (power, cop, flow_temp, energy_today)
+  # Car charging:         tiles/ev_charger.yaml  (power, energy)
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${device_friendly}
+  min_version: 2025.6.0
+  on_boot:
+    priority: 600
+    then:
+      - output.turn_on: backlight_switch
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_SPIRAM_RODATA: "y"
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+  level: INFO
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: NONE
+  ap:
+    ssid: "${device_name}"
+    password: !secret wifi_ap_password
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# ── Hardware: Waveshare ESP32-S3-Touch-LCD-7 (verified on the board) ──
+i2c:
+  - id: bus_i2c
+    sda: GPIO8
+    scl: GPIO9
+    frequency: 400kHz
+    scan: false
+
+ch422g:
+  - id: io_exp
+
+output:
+  # ponytail: backlight is on/off only (CH422G pin, no PWM); off at night when idle
+  - platform: gpio
+    id: backlight_switch
+    pin:
+      ch422g: io_exp
+      number: 2
+  - platform: gpio
+    id: tp_reset
+    pin:
+      ch422g: io_exp
+      number: 1
+      mode:
+        output: true
+      inverted: true
+
+display:
+  - platform: rpi_dpi_rgb
+    id: lcd
+    color_order: rgb
+    update_interval: never
+    pclk_frequency: 14MHz
+    pclk_inverted: true
+    auto_clear_enabled: false
+    dimensions:
+      width: 800
+      height: 480
+    hsync_pin: GPIO46
+    vsync_pin: GPIO3
+    de_pin: GPIO5
+    pclk_pin: GPIO7
+    hsync_back_porch: 8
+    hsync_front_porch: 8
+    hsync_pulse_width: 4
+    vsync_back_porch: 8
+    vsync_front_porch: 8
+    vsync_pulse_width: 4
+    data_pins:
+      red:    [GPIO1, GPIO2, GPIO42, GPIO41, GPIO40]
+      green:  [GPIO39, GPIO0, GPIO45, GPIO48, GPIO47, GPIO21]
+      blue:   [GPIO14, GPIO38, GPIO18, GPIO17, GPIO10]
+
+touchscreen:
+  - platform: gt911
+    id: touch
+    i2c_id: bus_i2c
+    interrupt_pin: GPIO4
+    on_release:
+      - script.execute: wake
+
+# ── Read-only states from HA ──
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Segnale"
+    update_interval: 60s
+    entity_category: diagnostic
+
+  # Grid meter, averaged so the semaforo doesn't flicker
+  - platform: homeassistant
+    id: export_w
+    entity_id: ${e_export_w}
+    filters:
+      - throttle_average: 30s
+  - platform: homeassistant
+    id: import_w
+    entity_id: ${e_import_w}
+    filters:
+      - throttle_average: 30s
+  - platform: homeassistant
+    id: load_w
+    entity_id: ${e_load_w}
+    filters:
+      - throttle_average: 30s
+  - platform: homeassistant
+    id: batt_pct
+    entity_id: ${e_batt_pct}
+  - platform: homeassistant
+    id: fc_today_kwh
+    entity_id: ${e_fc_today_kwh}
+  - platform: homeassistant
+    id: fc_tomorrow_kwh
+    entity_id: ${e_fc_tomorrow_kwh}
+
+  # Weather: current conditions only (a forecast needs a service call)
+  - platform: homeassistant
+    id: weather_c
+    entity_id: ${e_weather_cond}
+    attribute: temperature
+
+text_sensor:
+  - platform: homeassistant
+    id: weather_cond
+    entity_id: ${e_weather_cond}
+

@@ -1,0 +1,698 @@
+## Core UI shared by the device (energy-display.yaml) and the simulator (sim*.yaml).
+## Expects from the including file: sensors export_w, import_w, load_w, batt_pct, fc_today_kwh,
+## fc_tomorrow_kwh, weather_c; text sensor weather_cond; time ha_time; output backlight_switch;
+## and 4 tile modules (tiles/*.yaml) filling slots 1-4.
+
+esphome:
+  includes:
+    - ui_helpers.h
+
+substitutions:
+  # Semaforo thresholds (W) — calibration knobs, tune after a few weeks of use
+  green_export_w: "2500"   # exporting more than this -> green
+  red_import_w: "800"      # importing more than this -> red
+  # Big-load reminder: shown 10:30-12:30 when today's forecast exceeds this (kWh)
+  reminder_forecast_kwh: "60"
+  reminder_text: "Oggi tanto sole: a pranzo avvia i carichi grossi"
+  # Hint shown when the semaforo is green
+  green_hint: "Buon momento per lavatrice, lavastoviglie e auto elettrica"
+  # "Domani tanto sole" above this forecast (kWh)
+  sunny_tomorrow_kwh: "60"
+  # Chart: full bar height at this grid power (W), clamped beyond
+  chart_full_scale_w: "25000"
+  # Average grid prices shown in the "Sole e rete" popup (cent/kWh) — placeholders, check the bill
+  price_buy_cent: "22"
+  price_sell_cent: "10"
+  # Simulator only: prefill today's chart with a synthetic day
+  chart_demo: "false"
+
+  c_bg: "0x0E1116"
+  c_panel: "0x1A2027"
+  c_text: "0xFFFFFF"
+  c_muted: "0xA9B4BF"
+  c_green: "0x22A55B"
+  c_green_dk: "0x157A41"
+  c_yellow: "0xE9A800"
+  c_yellow_dk: "0xB77F00"
+  c_red: "0xD9443A"
+  c_red_dk: "0x9E2A23"
+  c_grey: "0x4A525A"
+  c_grey_dk: "0x30363C"
+  c_orange: "0xFF8A3D"
+  c_blue: "0x4FA3F7"
+  c_sun: "0xFFC531"
+  c_brown: "0xC8955C"
+
+font:
+  - { file: "gfonts://Roboto@700", id: f_h1, size: 36, bpp: 4, glyphsets: [GF_Latin_Core] }
+  - { file: "gfonts://Roboto@500", id: f_h2, size: 26, bpp: 4, glyphsets: [GF_Latin_Core] }
+  - { file: "gfonts://Roboto", id: f_body, size: 21, bpp: 4, glyphsets: [GF_Latin_Core] }
+  - { file: "gfonts://Roboto", id: f_small, size: 16, bpp: 4, glyphsets: [GF_Latin_Core] }
+  - { file: "gfonts://Roboto@700", id: f_value, size: 30, bpp: 4, glyphsets: [GF_Latin_Core] }
+  - { file: "gfonts://Roboto", id: f_saver_date, size: 34, bpp: 4, glyphsets: [GF_Latin_Core] }
+  - { file: "gfonts://Roboto@300", id: f_clock, size: 160, bpp: 4, glyphs: "0123456789:-" }
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: i_xl
+    size: 60
+    bpp: 4
+    glyphs:
+      - "\U000F05A8"  # white-balance-sunny
+      - "\U000F1903"  # home-lightning-bolt
+      - "\U000F0079"  # battery
+      - "\U000F0D3E"  # transmission-tower
+      - "\U000F0026"  # alert
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: i_m
+    size: 30
+    bpp: 4
+    glyphs: &icons_m
+      - "\U000F0599"  # weather-sunny
+      - "\U000F0594"  # weather-night
+      - "\U000F0590"  # weather-cloudy
+      - "\U000F0595"  # weather-partly-cloudy
+      - "\U000F0F31"  # weather-night-partly-cloudy
+      - "\U000F0597"  # weather-rainy
+      - "\U000F0596"  # weather-pouring
+      - "\U000F0598"  # weather-snowy
+      - "\U000F067F"  # weather-snowy-rainy
+      - "\U000F0591"  # weather-fog
+      - "\U000F0593"  # weather-lightning
+      - "\U000F067E"  # weather-lightning-rainy
+      - "\U000F059D"  # weather-windy
+      - "\U000F0592"  # weather-hail
+      - "\U000F0026"  # alert
+      - "\U000F0238"  # fire
+      - "\U000F1A85"  # water-thermometer
+      - "\U000F0D7C"  # grain
+      - "\U000F05A8"  # white-balance-sunny
+      - "\U000F0079"  # battery
+      - "\U000F1A1B"  # gas-burner
+      - "\U000F1A43"  # heat-pump
+      - "\U000F05F1"  # ev-station
+      - "\U000F140B"  # lightning-bolt
+      - "\U000F0F92"  # water-boiler
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: i_s
+    size: 24
+    bpp: 4
+    glyphs:
+      - "\U000F02DC"  # home
+      - "\U000F0D3E"  # transmission-tower
+      - "\U000F0079"  # battery
+      - "\U000F0084"  # battery-charging
+
+globals:
+  - { id: wake_ms, type: uint32_t, initial_value: "0" }
+  - { id: pop_which, type: int, initial_value: "-1" }  # open popup tile, -1 = closed
+
+interval:
+  - interval: 5s
+    then:
+      - script.execute: refresh
+
+  # Today's chart: one bar per 15 min, green up = exported, red down = imported.
+  # ponytail: kept in RAM, a reboot restarts the day's chart empty
+  - interval: 30s
+    startup_delay: 5s
+    then:
+      - lambda: |-
+          static const int N = 96, PITCH = 8, BAR_W = 6, HALF = 46;
+          static lv_obj_t *bars[N];
+          static float sum[N], cnt[N];
+          static int last_slot = -1;
+          auto now = id(ha_time).now();
+          auto draw = [&](int i) {
+            float v = sum[i] / cnt[i] / ${chart_full_scale_w};
+            int h = std::max(2, (int) (std::min(1.0f, std::fabs(v)) * HALF));
+            lv_obj_set_style_bg_color(bars[i], lv_color_hex(v >= 0 ? ${c_green} : ${c_red}), 0);
+            lv_obj_set_size(bars[i], BAR_W, h);
+            lv_obj_set_pos(bars[i], i * PITCH, v >= 0 ? HALF - h : HALF);
+          };
+          if (bars[0] == nullptr) {
+            for (int i = 0; i < N; i++) {
+              bars[i] = lv_obj_create(id(chart_box));
+              lv_obj_remove_style_all(bars[i]);
+              lv_obj_set_style_bg_opa(bars[i], LV_OPA_COVER, 0);
+              lv_obj_set_style_radius(bars[i], 2, 0);
+              lv_obj_remove_flag(bars[i], LV_OBJ_FLAG_CLICKABLE);
+              lv_obj_set_size(bars[i], BAR_W, 0);
+            }
+            if (${chart_demo} && now.is_valid()) {
+              for (int i = 0; i < (now.hour * 60 + now.minute) / 15; i++) {
+                float t = i / 4.0f, sun = std::sin(3.14159f * (t - 7) / 11);
+                sum[i] = 30000 * std::max(0.0f, sun) - 3500 + 1500 * std::sin(i * 1.7f);
+                cnt[i] = 1;
+                draw(i);
+              }
+            }
+          }
+          float ex = id(export_w).state, im = id(import_w).state;
+          if (!now.is_valid()) return;
+          int slot = (now.hour * 60 + now.minute) / 15;
+          lv_obj_set_x(id(chart_now), slot * PITCH + BAR_W / 2);
+          if (std::isnan(ex) || std::isnan(im)) return;
+          if (slot < last_slot) {  // new day
+            for (int i = 0; i < N; i++) { sum[i] = 0; cnt[i] = 0; lv_obj_set_size(bars[i], BAR_W, 0); }
+          }
+          last_slot = slot;
+          sum[slot] += ex - im;
+          cnt[slot] += 1;
+          draw(slot);
+
+  # Night: after 10 min untouched, backlight off (a touch wakes it, see script wake)
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              auto now = id(ha_time).now();
+              if (!now.is_valid()) return false;
+              int m = now.hour * 60 + now.minute;
+              bool night = m >= 22 * 60 || m < 6 * 60 + 30;
+              return night && lv_display_get_inactive_time(nullptr) > 600000 && millis() - id(wake_ms) > 600000;
+          then:
+            - output.turn_off: backlight_switch
+            - lvgl.pause:
+
+script:
+  - id: wake
+    then:
+      - lambda: 'id(wake_ms) = millis();'
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+      - output.turn_on: backlight_switch
+      - if:
+          condition:
+            lambda: 'return lv_screen_active() == id(page_saver)->obj;'
+          then:
+            - lvgl.page.show: page_main
+
+  - id: popup_open
+    parameters:
+      which: int
+    then:
+      - lambda: 'id(pop_which) = which;'
+      - script.execute: popup_fill
+      - lvgl.widget.show: popup
+
+  - id: popup_close
+    then:
+      - lambda: 'id(pop_which) = -1;'
+      - lvgl.widget.hide: popup
+
+  # Each tile module fills the popup in its own tile_popup_<slot> script
+  - id: popup_fill
+    then:
+      - lambda: |-
+          switch (id(pop_which)) {
+            case 1: id(tile_popup_1).execute(); break;
+            case 2: id(tile_popup_2).execute(); break;
+            case 3: id(tile_popup_3).execute(); break;
+            case 4: id(tile_popup_4).execute(); break;
+          }
+
+  - id: refresh
+    then:
+      - lambda: |-
+          // HA unavailable/unknown arrives as NaN -> "--", never 0
+          auto num = [](float v, const char *fmt) -> std::string {
+            if (std::isnan(v)) return "--";
+            char b[24];
+            snprintf(b, sizeof b, fmt, v);
+            std::string s(b);
+            std::replace(s.begin(), s.end(), '.', ',');
+            return s;
+          };
+          auto set = [](lv_obj_t *o, const std::string &s) { lv_label_set_text(o, s.c_str()); };
+          auto color = [](lv_obj_t *o, uint32_t c) { lv_obj_set_style_text_color(o, lv_color_hex(c), 0); };
+
+          float ex = id(export_w).state, im = id(import_w).state;
+          float batt = id(batt_pct).state, fc = id(fc_today_kwh).state;
+          auto now = id(ha_time).now();
+
+          // ── Semaforo ──
+          uint32_t bg, bg2;
+          const char *icon;
+          std::string title, sub, saver;
+          if (std::isnan(ex) || std::isnan(im)) {
+            bg = ${c_grey}; bg2 = ${c_grey_dk}; icon = "\U000F0026";
+            title = "Dati non disponibili"; sub = "Controlla la connessione a Home Assistant"; saver = "dati assenti";
+          } else if (ex >= ${green_export_w}) {
+            bg = ${c_green}; bg2 = ${c_green_dk}; icon = "\U000F05A8";
+            title = "C'è sole in avanzo"; sub = "${green_hint}"; saver = "sole in avanzo";
+          } else if (im >= ${red_import_w}) {
+            bg = ${c_red}; bg2 = ${c_red_dk}; icon = "\U000F0D3E";
+            title = "Stiamo comprando corrente"; sub = "Se puoi, rimanda lavatrice e forno a quando c'è sole"; saver = "compriamo corrente";
+          } else {
+            bg = ${c_yellow}; bg2 = ${c_yellow_dk};
+            bool sun = ex > 0;
+            icon = sun ? "\U000F1903" : "\U000F0079";
+            title = sun ? "Il sole copre i consumi" : "Usiamo la batteria";
+            sub = "Va bene così, non aggiungere carichi grossi"; saver = sun ? "il sole basta" : "usiamo la batteria";
+          }
+          if (now.is_valid() && !std::isnan(fc) && fc >= ${reminder_forecast_kwh} && bg != ${c_red}) {
+            int m = now.hour * 60 + now.minute;
+            if (m >= 10 * 60 + 30 && m < 12 * 60 + 30) {
+              icon = "\U000F05A8";
+              sub = "${reminder_text}";
+            }
+          }
+          lv_obj_set_style_bg_color(id(sem_panel), lv_color_hex(bg), 0);
+          lv_obj_set_style_bg_grad_color(id(sem_panel), lv_color_hex(bg2), 0);
+          set(id(sem_icon), icon);
+          set(id(sem_title), title);
+          set(id(sem_sub), sub);
+          lv_obj_set_style_bg_color(id(saver_dot), lv_color_hex(bg), 0);
+          set(id(saver_state), saver);
+
+          // ── Pills: casa, rete, batteria ──
+          set(id(lbl_load), "Casa " + num(id(load_w).state / 1000, "%.1f kW"));
+          if (std::isnan(ex)) { set(id(lbl_grid), "Rete --"); color(id(lbl_grid), ${c_text}); }
+          else if (ex > 50) { set(id(lbl_grid), "Diamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
+          else if (im > 50) { set(id(lbl_grid), "Compriamo " + num(im / 1000, "%.1f kW")); color(id(lbl_grid), ${c_red}); }
+          else { set(id(lbl_grid), "Rete a zero"); color(id(lbl_grid), ${c_text}); }
+          set(id(lbl_batt), num(batt, "%.0f%%"));
+          lv_bar_set_value(id(bar_batt), std::isnan(batt) ? 0 : (int) batt, LV_ANIM_OFF);
+
+          // ── Data e ora ──
+          static const char *DAYS[] = {"Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"};
+          static const char *MONTHS[] = {"gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+                                         "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"};
+          std::string hhmm = now.is_valid() ? now.strftime("%H:%M") : "--:--";
+          std::string date = now.is_valid()
+              ? std::string(DAYS[now.day_of_week - 1]) + " " + std::to_string(now.day_of_month) + " " + MONTHS[now.month - 1]
+              : "";
+          set(id(lbl_clock), hhmm);
+          set(id(lbl_date), date);
+          set(id(saver_clock), hhmm);
+          set(id(saver_date), date);
+
+          // ── Meteo (HA weather conditions -> Italian + icon) ──
+          struct Cond { const char *it, *icon; };
+          static const std::map<std::string, Cond> COND = {
+            {"sunny", {"Sereno", "\U000F0599"}}, {"clear-night", {"Sereno", "\U000F0594"}},
+            {"partlycloudy", {"Poco nuvoloso", "\U000F0595"}}, {"cloudy", {"Nuvoloso", "\U000F0590"}},
+            {"fog", {"Nebbia", "\U000F0591"}}, {"rainy", {"Pioggia", "\U000F0597"}},
+            {"pouring", {"Pioggia forte", "\U000F0596"}}, {"lightning", {"Temporale", "\U000F0593"}},
+            {"lightning-rainy", {"Temporale", "\U000F067E"}}, {"snowy", {"Neve", "\U000F0598"}},
+            {"snowy-rainy", {"Neve e pioggia", "\U000F067F"}}, {"hail", {"Grandine", "\U000F0592"}},
+            {"windy", {"Vento", "\U000F059D"}}, {"windy-variant", {"Vento", "\U000F059D"}},
+            {"exceptional", {"Allerta meteo", "\U000F0026"}}};
+          auto it = COND.find(id(weather_cond).state);
+          bool night_sky = now.is_valid() && (now.hour >= 19 || now.hour < 7);
+          const char *wicon = it == COND.end() ? "\U000F0026"
+              : (night_sky && it->first == "sunny") ? "\U000F0594"
+              : (night_sky && it->first == "partlycloudy") ? "\U000F0F31" : it->second.icon;
+          std::string wtemp = num(id(weather_c).state, "%.0f°");
+          set(id(w_icon), wicon);
+          set(id(w_temp), wtemp);
+          set(id(w_cond), it == COND.end() ? "--" : it->second.it);
+          set(id(saver_w_icon), wicon);
+          set(id(saver_w_temp), wtemp);
+          set(id(saver_batt), num(batt, "%.0f%%"));
+
+          // ── Tiles: register widgets for ui_helpers.h, then let each module fill its slot ──
+          ui::tiles[1] = {id(t1_icon_bg), id(t1_icon), id(t1_val), id(t1_cap)};
+          ui::tiles[2] = {id(t2_icon_bg), id(t2_icon), id(t2_val), id(t2_cap)};
+          ui::tiles[3] = {id(t3_icon_bg), id(t3_icon), id(t3_val), id(t3_cap)};
+          ui::tiles[4] = {id(t4_icon_bg), id(t4_icon), id(t4_val), id(t4_cap)};
+          lv_obj_t *p[7] = {id(pop_icon_bg), id(pop_icon), id(pop_title), id(pop_value), id(pop_names), id(pop_vals), id(pop_text)};
+          std::copy(p, p + 7, ui::pop);
+          id(tile_fill_1).execute();
+          id(tile_fill_2).execute();
+          id(tile_fill_3).execute();
+          id(tile_fill_4).execute();
+          if (id(pop_which) >= 0) id(popup_fill).execute();
+
+          // ── Saver: same palette as the app, dimmer at night ──
+          auto m = now.is_valid() ? now.hour * 60 + now.minute : 12 * 60;
+          bool night = m >= 22 * 60 || m < 6 * 60 + 30;
+          lv_style_set_text_color(id(st_saver), lv_color_hex(night ? 0x5C6672 : 0xE6EAEE));
+          lv_style_set_text_color(id(st_saver2), lv_color_hex(night ? 0x3E4650 : 0x8A96A3));
+          lv_obj_report_style_change(id(st_saver));
+          lv_obj_report_style_change(id(st_saver2));
+
+lvgl:
+  buffer_size: 25%
+  log_level: WARN
+  bg_color: $c_bg
+  text_color: $c_text
+  text_font: f_body
+
+  style_definitions:
+    - id: st_panel
+      bg_color: $c_panel
+      bg_opa: COVER
+      text_color: $c_text
+      radius: 16
+      border_width: 0
+      pad_all: 0
+    - id: st_muted
+      text_color: $c_muted
+    - id: st_flat
+      bg_opa: TRANSP
+      border_width: 0
+      pad_all: 0
+      radius: 0
+    - { id: st_saver, text_color: 0xE6EAEE }
+    - { id: st_saver2, text_color: 0x8A96A3 }
+
+  # Idle: after 60 s show the big clock; a touch goes back
+  on_idle:
+    timeout: 60s
+    then:
+      - script.execute: popup_close
+      - lvgl.page.show: page_saver
+
+  top_layer:
+    widgets:
+      - obj:
+          id: popup
+          hidden: true
+          x: 0
+          y: 0
+          width: 800
+          height: 480
+          radius: 0
+          border_width: 0
+          pad_all: 0
+          bg_color: 0x000000
+          bg_opa: 65%
+          scrollable: false
+          on_click:
+            - script.execute: popup_close
+          widgets:
+            - obj:
+                styles: st_panel
+                align: CENTER
+                width: 680
+                height: 420
+                radius: 22
+                bg_color: 0x1D242C
+                clickable: false
+                scrollable: false
+                widgets:
+                  - obj:
+                      id: pop_icon_bg
+                      x: 24
+                      y: 22
+                      width: 56
+                      height: 56
+                      radius: 28
+                      border_width: 0
+                      bg_opa: 22%
+                      clickable: false
+                      scrollable: false
+                      widgets:
+                        - label: { id: pop_icon, align: CENTER, text: "", text_font: i_m }
+                  - label: { id: pop_title, x: 96, y: 30, text: "", text_font: f_h1 }
+                  - label: { id: pop_value, align: TOP_RIGHT, x: -26, y: 30, text: "", text_font: f_h1 }
+                  - obj: { x: 24, y: 96, width: 632, height: 1, bg_color: 0x333C46, bg_opa: COVER, border_width: 0, radius: 0 }
+                  - label: { text_font: f_body, id: pop_names, x: 24, y: 110, width: 380, text: "", styles: st_muted, text_line_space: 7 }
+                  - label: { text_font: f_body, id: pop_vals, align: TOP_RIGHT, x: -26, y: 110, width: 250, text_align: RIGHT, text: "", text_line_space: 7 }
+                  - label: { text_font: f_body, id: pop_text, x: 24, y: 278, width: 632, long_mode: WRAP, text: "", text_line_space: 4, text_color: 0xD5DCE3 }
+                  - label: { align: BOTTOM_MID, y: -12, text: "tocca per chiudere", text_font: f_small, styles: st_muted }
+
+  pages:
+    - id: page_main
+      widgets:
+        # ── Header: time + date left, weather right ──
+        - label: { id: lbl_clock, x: 16, y: 6, text: "--:--", text_font: f_h1 }
+        - label: { id: lbl_date, x: 130, y: 17, text: "", styles: st_muted }
+        - obj:
+            styles: st_flat
+            align: TOP_RIGHT
+            x: -14
+            y: 8
+            width: SIZE_CONTENT
+            height: SIZE_CONTENT
+            scrollable: false
+            layout: { type: flex, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 8 }
+            widgets:
+              - label: { id: w_icon, text: "\U000F0026", text_font: i_m, text_color: $c_sun }
+              - label: { id: w_temp, text: "--", text_font: f_h2, text_color: $c_text }
+              - label: { id: w_cond, text: "--", styles: st_muted }
+
+        # ── Semaforo ──
+        - obj:
+            id: sem_panel
+            x: 10
+            y: 56
+            width: 780
+            height: 122
+            radius: 20
+            border_width: 0
+            pad_all: 0
+            bg_color: $c_grey
+            bg_grad_color: $c_grey_dk
+            bg_grad_dir: HOR
+            bg_opa: COVER
+            scrollable: false
+            widgets:
+              - obj:
+                  align: LEFT_MID
+                  x: 18
+                  width: 88
+                  height: 88
+                  radius: 44
+                  border_width: 0
+                  bg_color: 0xFFFFFF
+                  bg_opa: 22%
+                  scrollable: false
+                  widgets:
+                    - label: { id: sem_icon, align: CENTER, text: "\U000F0026", text_font: i_xl, text_color: 0xFFFFFF }
+              - label: { id: sem_title, x: 126, y: 18, text: "Avvio...", text_font: f_h1, text_color: 0xFFFFFF }
+              - label: { id: sem_sub, x: 128, y: 66, width: 630, long_mode: WRAP, text: "", text_font: f_body, text_color: 0xFFFFFF, text_opa: 88% }
+
+        # ── Pills: casa / rete / batteria ──
+        - obj:
+            styles: st_panel
+            x: 10
+            y: 186
+            width: 254
+            height: 46
+            radius: 23
+            scrollable: false
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 8 }
+            widgets:
+              - label: { text: "\U000F02DC", text_font: i_s, text_color: $c_blue }
+              - label: { id: lbl_load, text: "Casa --" }
+        - obj:
+            styles: st_panel
+            x: 273
+            y: 186
+            width: 254
+            height: 46
+            radius: 23
+            scrollable: false
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 8 }
+            widgets:
+              - label: { text: "\U000F0D3E", text_font: i_s, text_color: $c_muted }
+              - label: { id: lbl_grid, text: "Rete --" }
+        - obj:
+            styles: st_panel
+            x: 536
+            y: 186
+            width: 254
+            height: 46
+            radius: 23
+            scrollable: false
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 10 }
+            widgets:
+              - label: { text: "\U000F0079", text_font: i_s, text_color: $c_green }
+              - bar:
+                  id: bar_batt
+                  width: 90
+                  height: 12
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  bg_color: 0x2C343D
+                  bg_opa: COVER
+                  radius: 6
+                  indicator: { bg_color: $c_green, bg_opa: COVER, radius: 6 }
+              - label: { id: lbl_batt, text: "--" }
+
+        # ── Today's chart (bars created by the 30 s interval lambda) ──
+        - obj:
+            styles: st_panel
+            x: 10
+            y: 240
+            width: 780
+            height: 150
+            scrollable: false
+            widgets:
+              - label: { x: 14, y: 8, text: "Oggi con la rete", text_font: f_body }
+              - obj:
+                  styles: st_flat
+                  align: TOP_RIGHT
+                  x: -14
+                  y: 12
+                  width: SIZE_CONTENT
+                  height: SIZE_CONTENT
+                  scrollable: false
+                  layout: { type: flex, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 6 }
+                  widgets:
+                    - obj: { width: 12, height: 12, radius: 6, bg_color: $c_green, border_width: 0 }
+                    - label: { text: "dato  ", text_font: f_small, styles: st_muted }
+                    - obj: { width: 12, height: 12, radius: 6, bg_color: $c_red, border_width: 0 }
+                    - label: { text: "comprato", text_font: f_small, styles: st_muted }
+              - obj:
+                  id: chart_box
+                  styles: st_flat
+                  x: 6
+                  y: 38
+                  width: 768
+                  height: 92
+                  scrollable: false
+                  widgets:
+                    - obj: { x: 0, y: 46, width: 768, height: 1, bg_color: 0x3A434D, bg_opa: COVER, border_width: 0, radius: 0 }
+                    - obj: { id: chart_now, x: 0, y: 0, width: 2, height: 92, bg_color: 0xFFFFFF, bg_opa: 45%, border_width: 0, radius: 0 }
+              - label: { x: 6, y: 128, text: "0", text_font: f_small, styles: st_muted }
+              - label: { x: 190, y: 128, text: "6", text_font: f_small, styles: st_muted }
+              - label: { x: 380, y: 128, text: "12", text_font: f_small, styles: st_muted }
+              - label: { x: 572, y: 128, text: "18", text_font: f_small, styles: st_muted }
+              - label: { x: 758, y: 128, text: "24", text_font: f_small, styles: st_muted }
+
+        # ── Tiles: 4 slots filled by the modules in tiles/ ──
+        - obj:
+            styles: st_panel
+            x: 10
+            y: 398
+            width: 187
+            height: 74
+            scrollable: false
+            pressed: { bg_color: 0x27303A }
+            on_click:
+              - script.execute: { id: popup_open, which: 1 }
+            widgets:
+              - obj:
+                  id: t1_icon_bg
+                  x: 12
+                  align: LEFT_MID
+                  width: 46
+                  height: 46
+                  radius: 23
+                  clickable: false
+                  bg_color: $c_grey
+                  bg_opa: 22%
+                  border_width: 0
+                  scrollable: false
+                  widgets:
+                    - label: { id: t1_icon, align: CENTER, text: "", text_font: i_m }
+              - label: { id: t1_val, x: 68, y: 6, text: "--", text_font: f_value }
+              - label: { id: t1_cap, x: 68, y: 46, width: 112, height: 20, long_mode: DOT, text: "", text_font: f_small, styles: st_muted }
+        - obj:
+            styles: st_panel
+            x: 207
+            y: 398
+            width: 187
+            height: 74
+            scrollable: false
+            pressed: { bg_color: 0x27303A }
+            on_click:
+              - script.execute: { id: popup_open, which: 2 }
+            widgets:
+              - obj:
+                  id: t2_icon_bg
+                  x: 12
+                  align: LEFT_MID
+                  width: 46
+                  height: 46
+                  radius: 23
+                  clickable: false
+                  bg_color: $c_grey
+                  bg_opa: 22%
+                  border_width: 0
+                  scrollable: false
+                  widgets:
+                    - label: { id: t2_icon, align: CENTER, text: "", text_font: i_m }
+              - label: { id: t2_val, x: 68, y: 6, text: "--", text_font: f_value }
+              - label: { id: t2_cap, x: 68, y: 46, width: 112, height: 20, long_mode: DOT, text: "", text_font: f_small, styles: st_muted }
+        - obj:
+            styles: st_panel
+            x: 404
+            y: 398
+            width: 187
+            height: 74
+            scrollable: false
+            pressed: { bg_color: 0x27303A }
+            on_click:
+              - script.execute: { id: popup_open, which: 3 }
+            widgets:
+              - obj:
+                  id: t3_icon_bg
+                  x: 12
+                  align: LEFT_MID
+                  width: 46
+                  height: 46
+                  radius: 23
+                  clickable: false
+                  bg_color: $c_grey
+                  bg_opa: 22%
+                  border_width: 0
+                  scrollable: false
+                  widgets:
+                    - label: { id: t3_icon, align: CENTER, text: "", text_font: i_m }
+              - label: { id: t3_val, x: 68, y: 6, text: "--", text_font: f_value }
+              - label: { id: t3_cap, x: 68, y: 46, width: 112, height: 20, long_mode: DOT, text: "", text_font: f_small, styles: st_muted }
+        - obj:
+            styles: st_panel
+            x: 601
+            y: 398
+            width: 189
+            height: 74
+            scrollable: false
+            pressed: { bg_color: 0x27303A }
+            on_click:
+              - script.execute: { id: popup_open, which: 4 }
+            widgets:
+              - obj:
+                  id: t4_icon_bg
+                  x: 12
+                  align: LEFT_MID
+                  width: 46
+                  height: 46
+                  radius: 23
+                  clickable: false
+                  bg_color: $c_grey
+                  bg_opa: 22%
+                  border_width: 0
+                  scrollable: false
+                  widgets:
+                    - label: { id: t4_icon, align: CENTER, text: "", text_font: i_m }
+              - label: { id: t4_val, x: 68, y: 6, text: "--", text_font: f_value }
+              - label: { id: t4_cap, x: 68, y: 46, width: 114, height: 20, long_mode: DOT, text: "", text_font: f_small, styles: st_muted }
+
+    # ═══════ Screensaver: big clock, date, status ═════════
+    - id: page_saver
+      bg_color: 0x000000
+      widgets:
+        - label: { id: saver_clock, align: CENTER, y: -70, text: "--:--", text_font: f_clock, styles: st_saver }
+        - label: { id: saver_date, align: CENTER, y: 46, text: "", text_font: f_saver_date, styles: st_saver2 }
+        - obj:
+            styles: st_flat
+            align: CENTER
+            y: 120
+            width: SIZE_CONTENT
+            height: SIZE_CONTENT
+            scrollable: false
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 12 }
+            widgets:
+              - obj: { id: saver_dot, styles: st_flat, width: 22, height: 22, radius: 11, bg_color: $c_grey, bg_opa: COVER, clickable: false, scrollable: false }
+              - label: { id: saver_state, text: "--", text_font: f_h2, styles: st_saver2, pad_right: 30 }
+              - label: { id: saver_w_icon, text: "\U000F0026", text_font: i_m, styles: st_saver2 }
+              - label: { id: saver_w_temp, text: "--", text_font: f_h2, styles: st_saver2, pad_right: 30 }
+              - label: { text: "\U000F0079", text_font: i_m, styles: st_saver2 }
+              - label: { id: saver_batt, text: "--", text_font: f_h2, styles: st_saver2 }
+        - label: { align: BOTTOM_MID, y: -20, text: "tocca per vedere tutto", text_font: f_small, styles: st_saver2 }
+        # full-screen catcher: any touch goes back to the main page
+        - obj:
+            styles: st_flat
+            width: 800
+            height: 480
+            on_click:
+              - script.execute: wake

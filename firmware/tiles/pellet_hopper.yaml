@@ -1,0 +1,30 @@
+## Tile: pellet hopper / store level, with ash-box warning
+## vars: slot (1-4), level (%), ash_hours (h until ash box warning), used (t since reset), total (t)
+sensor:
+  - { platform: homeassistant, id: ph_level, entity_id: "${level}" }
+  - { platform: homeassistant, id: ph_ash, entity_id: "${ash_hours}" }
+  - { platform: homeassistant, id: ph_used, entity_id: "${used}" }
+  - { platform: homeassistant, id: ph_total, entity_id: "${total}" }
+
+script:
+  - id: tile_fill_${slot}
+    then:
+      - lambda: |-
+          float ash = id(ph_ash).state;
+          bool due = !std::isnan(ash) && ash < 24;
+          ui::tile(${slot}, "\U000F0D7C", 0xC8955C, ui::fmt(id(ph_level).state, "%.0f%%"),
+                   due ? "Svuota cenere!" : "Pellet", due ? 0xFF8A3D : ui::MUTED);
+  - id: tile_popup_${slot}
+    then:
+      - lambda: |-
+          ui::popup("\U000F0D7C", 0xC8955C, "Pellet", ui::fmt(id(ph_level).state, "%.0f%%"),
+              "Serbatoio della caldaia\nBruciati dall'azzeramento\nBruciati in totale\nOre alla pulizia cenere",
+              ui::fmt(id(ph_level).state, "%.0f%%") + "\n" + ui::fmt(id(ph_used).state, "%.2f t") + "\n"
+                  + ui::fmt(id(ph_total).state, "%.1f t") + "\n" + ui::fmt(id(ph_ash).state, "%.0f h"),
+              "Il serbatoio accanto alla caldaia si ricarica dal deposito. Quando le ore alla pulizia "
+              "scendono vicino a zero, va svuotato il cassetto della cenere.");
+  - id: tile_demo_${slot}
+    then:
+      - lambda: |-
+          id(ph_level).publish_state(71.5); id(ph_ash).publish_state(234);
+          id(ph_used).publish_state(3.654); id(ph_total).publish_state(22.6);

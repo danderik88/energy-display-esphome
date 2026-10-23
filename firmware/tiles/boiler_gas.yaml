@@ -1,0 +1,33 @@
+## Tile: gas boiler (e.g. OpenTherm gateway, ebusd, ems-esp, Viessmann, Vaillant integrations)
+## vars: slot (1-4), flow_temp (°C), flame (binary_sensor), modulation (%), gas_today (m³), pressure (bar)
+sensor:
+  - { platform: homeassistant, id: gb_flow, entity_id: "${flow_temp}" }
+  - { platform: homeassistant, id: gb_mod, entity_id: "${modulation}" }
+  - { platform: homeassistant, id: gb_gas, entity_id: "${gas_today}" }
+  - { platform: homeassistant, id: gb_bar, entity_id: "${pressure}" }
+binary_sensor:
+  - { platform: homeassistant, id: gb_flame, entity_id: "${flame}" }
+
+script:
+  - id: tile_fill_${slot}
+    then:
+      - lambda: |-
+          bool on = id(gb_flame).has_state() && id(gb_flame).state;
+          ui::tile(${slot}, "\U000F1A1B", 0xFF8A3D, ui::fmt(id(gb_flow).state, "%.0f°C"),
+                   on ? "In funzione" : "A riposo");
+  - id: tile_popup_${slot}
+    then:
+      - lambda: |-
+          bool known = id(gb_flame).has_state();
+          ui::popup("\U000F1A1B", 0xFF8A3D, "Caldaia a gas", ui::fmt(id(gb_flow).state, "%.0f°C"),
+              "Fiamma\nModulazione\nGas oggi\nPressione impianto",
+              std::string(!known ? "--" : id(gb_flame).state ? "accesa" : "spenta") + "\n"
+                  + ui::fmt(id(gb_mod).state, "%.0f%%") + "\n" + ui::fmt(id(gb_gas).state, "%.1f m³") + "\n"
+                  + ui::fmt(id(gb_bar).state, "%.1f bar"),
+              "La caldaia scalda l'acqua dei termosifoni e dell'acqua calda. Abbassare di un grado "
+              "il termostato fa risparmiare circa il 6% di gas. La pressione giusta è tra 1 e 2 bar.");
+  - id: tile_demo_${slot}
+    then:
+      - lambda: |-
+          id(gb_flow).publish_state(48); id(gb_mod).publish_state(35); id(gb_gas).publish_state(2.7);
+          id(gb_bar).publish_state(1.4); id(gb_flame).publish_state(true);

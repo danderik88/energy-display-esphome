@@ -1,5 +1,8 @@
 ## Simulator, "gas" example. Run: esphome run firmware/sim_gas.yaml
 
+substitutions:
+  chart_demo: "true"   # top level so it wins over ui.yaml
+
 esphome:
   name: energy-display-sim-gas
 

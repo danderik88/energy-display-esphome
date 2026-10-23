@@ -2,9 +2,6 @@
 ## Env: SIM_RED=1 red scenario, SIM_SAVER=1 open the screensaver,
 ##      SIM_POPUP=1..4 open a tile popup, SIM_SHOT=/path.bmp save a screenshot after ~20 s (then exit).
 
-substitutions:
-  chart_demo: "true"
-
 host:
 
 logger:

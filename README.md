@@ -115,6 +115,10 @@ On macOS, if the C++ headers are not found:
 export SDKROOT=$(xcrun --show-sdk-path) CPLUS_INCLUDE_PATH=$SDKROOT/usr/include/c++/v1
 ```
 
+## Support
+
+If this taught someone at home to run the washing machine when the sun is out, you can [buy me a coffee](https://paypal.me/merighidaniel). Modules for other boilers, heat pumps or chargers are just as welcome.
+
 ## Credits and license
 
 MIT — see `LICENSE`. The Material Design Icons webfont (`firmware/fonts/`) is by Pictogrammers, Apache 2.0. Roboto is fetched at build time from Google Fonts (`gfonts://`).

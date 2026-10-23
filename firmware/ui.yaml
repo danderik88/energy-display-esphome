@@ -476,7 +476,7 @@ lvgl:
             height: 46
             radius: 23
             scrollable: false
-            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 8 }
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, flex_align_track: CENTER, pad_column: 8 }
             widgets:
               - label: { text: "\U000F02DC", text_font: i_s, text_color: $c_blue }
               - label: { id: lbl_load, text: "Casa --" }
@@ -488,7 +488,7 @@ lvgl:
             height: 46
             radius: 23
             scrollable: false
-            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 8 }
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, flex_align_track: CENTER, pad_column: 8 }
             widgets:
               - label: { text: "\U000F0D3E", text_font: i_s, text_color: $c_muted }
               - label: { id: lbl_grid, text: "Rete --" }
@@ -500,7 +500,7 @@ lvgl:
             height: 46
             radius: 23
             scrollable: false
-            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 10 }
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, flex_align_track: CENTER, pad_column: 10 }
             widgets:
               - label: { text: "\U000F0079", text_font: i_s, text_color: $c_green }
               - bar:
@@ -680,7 +680,7 @@ lvgl:
             width: SIZE_CONTENT
             height: SIZE_CONTENT
             scrollable: false
-            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, pad_column: 12 }
+            layout: { type: flex, flex_flow: ROW, flex_align_main: CENTER, flex_align_cross: CENTER, flex_align_track: CENTER, pad_column: 12 }
             widgets:
               - obj: { id: saver_dot, styles: st_flat, width: 22, height: 22, radius: 11, bg_color: $c_grey, bg_opa: COVER, clickable: false, scrollable: false }
               - label: { id: saver_state, text: "--", text_font: f_h2, styles: st_saver2, pad_right: 30 }

@@ -11,6 +11,7 @@ substitutions:
   # Semaforo thresholds (W) — calibration knobs, tune after a few weeks of use
   green_export_w: "2500"   # exporting more than this -> green
   red_import_w: "800"      # importing more than this -> red
+  grid_deadband_w: "200"   # grid exchange below this counts as zero (inverter regulation noise)
   # Big-load reminder: shown 10:30-12:30 when today's forecast exceeds this (kWh)
   reminder_forecast_kwh: "60"
   reminder_text: "Oggi c'è molto sole: accendi i carichi grossi a pranzo"
@@ -34,6 +35,8 @@ substitutions:
   c_yellow_dk: "0xB77F00"
   c_red: "0xD9443A"
   c_red_dk: "0x9E2A23"
+  c_calm: "0x2F80C8"
+  c_calm_dk: "0x1D5C96"
   c_grey: "0x4A525A"
   c_grey_dk: "0x30363C"
   c_orange: "0xFF8A3D"
@@ -369,7 +372,7 @@ script:
             case 3: id(tile_popup_3).execute(); break;
             case 4: id(tile_popup_4).execute(); break;
             case 9:  // info button
-              ui::popup("\U000F02FD", ${c_blue}, "Come si legge", "", "Verde\nGiallo\nRosso\nGrafico\nRiquadri", "c'è corrente in più: usala\nva bene, ma non accendere altro\nstiamo comprando: se puoi, aspetta\nverde venduta, rosso comprata\ntoccali per i dettagli", "Lavatrice, lavastoviglie, forno e auto consumano tanto: conviene accenderli quando il semaforo è verde.");
+              ui::popup("\U000F02FD", ${c_blue}, "Come si legge", "", "Verde\nBlu\nGiallo\nRosso\nGrafico", "c'è corrente in più: usala\nbasta il nostro: va bene così\nprendiamo un po' dalla rete\nstiamo comprando: se puoi, aspetta\nverde venduta, rosso comprata", "Lavatrice, lavastoviglie, forno e auto consumano tanto: conviene accenderli quando il semaforo è verde.");
               break;
           }
 
@@ -405,21 +408,22 @@ script:
           } else if (im >= ${red_import_w}) {
             bg = ${c_red}; bg2 = ${c_red_dk}; icon = "\U000F0D3E";
             title = "Stiamo comprando corrente"; sub = "Se puoi, aspetta il sole per lavatrice e forno"; saver = "compriamo corrente";
-          } else {
+          } else if (im > ${grid_deadband_w}) {
             bg = ${c_yellow}; bg2 = ${c_yellow_dk};
+            icon = "\U000F0D3E"; title = "Prendiamo un po' dalla rete"; saver = "un po' dalla rete";
+            sub = "Niente di grave, ma per ora non accendere altro";
+          } else {
+            bg = ${c_calm}; bg2 = ${c_calm_dk};
             float dis = id(batt_dis_w).state, chg = id(batt_chg_w).state;
             if (!std::isnan(dis) && dis > 200) {
-              icon = "\U000F0079"; title = "Andiamo a batteria"; saver = "andiamo a batteria";
-              sub = "Il sole non basta: per ora usiamo la batteria";
+              icon = "\U000F0079"; title = "Usiamo il sole di oggi"; saver = "a batteria";
+              sub = "La batteria restituisce il sole accumulato: va bene così";
             } else if (!std::isnan(chg) && chg > 200) {
-              icon = "\U000F0084"; title = "La batteria si sta caricando"; saver = "batteria in carica";
+              icon = "\U000F0084"; title = "Il sole carica la batteria"; saver = "batteria in carica";
               sub = "Quando sarà carica, il semaforo diventerà verde";
-            } else if (im > 50) {
-              icon = "\U000F0D3E"; title = "Prendiamo un po' dalla rete"; saver = "un po' dalla rete";
-              sub = "Va bene così, ma per ora non accendere altro";
             } else {
               icon = "\U000F1903"; title = "Il sole basta per la casa"; saver = "il sole basta";
-              sub = "Va bene così, ma per ora non accendere altro";
+              sub = "Va bene così, non serve fare niente";
             }
           }
           if (now.is_valid() && !std::isnan(fc) && fc >= ${reminder_forecast_kwh} && bg != ${c_red}) {
@@ -440,8 +444,8 @@ script:
           // ── Pills: casa, rete, batteria ──
           set(id(lbl_load), "Casa " + num(id(load_w).state / 1000, "%.1f kW"));
           if (std::isnan(ex)) { set(id(lbl_grid), "Rete --"); color(id(lbl_grid), ${c_text}); }
-          else if (ex > 50) { set(id(lbl_grid), "Vendiamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
-          else if (im > 50) { set(id(lbl_grid), "Compriamo " + num(im / 1000, "%.1f kW")); color(id(lbl_grid), ${c_red}); }
+          else if (ex > ${grid_deadband_w}) { set(id(lbl_grid), "Vendiamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
+          else if (im > ${grid_deadband_w}) { set(id(lbl_grid), "Compriamo " + num(im / 1000, "%.1f kW")); color(id(lbl_grid), ${c_red}); }
           else { set(id(lbl_grid), "Niente dalla rete"); color(id(lbl_grid), ${c_text}); }
           set(id(lbl_batt), num(batt, "%.0f%%"));
           lv_bar_set_value(id(bar_batt), std::isnan(batt) ? 0 : (int) batt, LV_ANIM_OFF);

@@ -8,7 +8,7 @@ Taken from the desktop simulator with demo data.
 
 | | |
 |---|---|
-| ![Pellet profile, green](docs/pellet.png)<br>Pellet profile, green semaforo: a lot of export | ![Pellet profile, yellow](docs/pellet_yellow.png)<br>Yellow semaforo: battery charging, sun nearly enough |
+| ![Pellet profile, green](docs/pellet.png)<br>Pellet profile, green semaforo: a lot of export | ![Pellet profile, blue](docs/pellet_yellow.png)<br>Blue semaforo: battery charging, sun nearly enough |
 | ![Pellet profile, red](docs/pellet_red.png)<br>Red semaforo: importing from the grid | ![Gas profile](docs/gas.png)<br>Gas boiler profile |
 | ![Heat pump profile](docs/heatpump.png)<br>Heat pump profile | ![Pellet popup](docs/pellet_popup.png)<br>Pellet boiler popup |
 | ![Heat pump popup](docs/heatpump_popup.png)<br>Heat pump popup | ![Gas and EV popup](docs/gas_ev_popup.png)<br>Gas boiler + car charging popup |
@@ -23,7 +23,7 @@ Waveshare ESP32-S3-Touch-LCD-7: 800x480 RGB panel driven with `rpi_dpi_rgb`, 8 M
 ## What it shows
 
 - **Semaforo** — green above `${green_export_w}` (2500 W) exported, yellow in between, red above `${red_import_w}` (800 W) imported. Both are calibration knobs in `ui.yaml`; grid values are averaged over 30 s so the colour does not flicker.
-  Yellow is not one message: it reads `batt_dis_w` and `batt_chg_w` (> 200 W) and says "Andiamo a batteria" while the battery is discharging, "La batteria si sta caricando" while it is charging (green is coming), "Prendiamo un po' dalla rete" for a small grid import above 50 W, and "Il sole basta per la casa" when the sun covers the house.
+  **Blue** means self-sufficient, nothing to do: "Usiamo il sole di oggi" while the battery discharges, "Il sole carica la batteria" while it charges, "Il sole basta per la casa" otherwise (`batt_dis_w` / `batt_chg_w` > 200 W). **Yellow** is only a small grid import between `grid_deadband_w` (200 W) and `red_import_w`; below the deadband the grid pill says "Niente dalla rete" (inverter regulation noise is not shown as buying).
 - **Pills** — `Rete` (grid, or "Rete a zero"), `Casa` (house load) and battery percentage.
 - **Last 24 hours chart** — scrolling window, newest on the right ("ora"): one bar per 15 minutes, green upward for exported energy, red downward for imported, auto-scaled to the largest bar of the window (at least 1 kW, shown as "max N kW"); hour labels move with the bars. Saved to flash once per completed slot (under 1 KB, ~96 writes a day) and restored after a reboot.
 - **Info button** — the (i) next to the weather opens a short "how to read it" popup.

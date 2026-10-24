@@ -18,8 +18,6 @@ substitutions:
   green_hint: "Se devi fare lavatrice o lavastoviglie, è il momento giusto"
   # "Domani tanto sole" above this forecast (kWh)
   sunny_tomorrow_kwh: "60"
-  # Chart: full bar height at this grid power (W), clamped beyond
-  chart_full_scale_w: "25000"
   # Average grid prices shown in the "Sole e rete" popup (cent/kWh) — placeholders, check the bill
   price_buy_cent: "22"
   price_sell_cent: "10"
@@ -185,12 +183,28 @@ interval:
             pref.save(&sv);
             saved_slot = cur;
           }
+          // auto scale: the tallest bar of the window nearly fills the half height (at least 1 kW)
+          float peak = 1000;
+          for (int i = 0; i < N; i++) {
+            int32_t a = cur - (N - 1) + i;
+            int c = a % N;
+            if (stamp[c] == a && cnt[c] > 0) peak = std::max(peak, std::fabs(sum[c] / cnt[c]));
+          }
+          float fs = std::ceil(peak / 1000.0f) * 1000;
+          static lv_obj_t *scale = nullptr;
+          if (scale == nullptr) {
+            scale = lv_label_create(panel);
+            lv_obj_set_style_text_font(scale, id(f_small), 0);
+            lv_obj_set_style_text_color(scale, lv_color_hex(${c_muted}), 0);
+            lv_obj_set_pos(scale, 150, 12);
+          }
+          lv_label_set_text(scale, ("max " + std::to_string((int) (fs / 1000)) + " kW").c_str());
           int nh = 0;
           for (int i = 0; i < N; i++) {
             int32_t a = cur - (N - 1) + i;
             int c = a % N;
             if (stamp[c] == a && cnt[c] > 0) {
-              float v = sum[c] / cnt[c] / ${chart_full_scale_w};
+              float v = sum[c] / cnt[c] / fs;
               int h = std::max(2, (int) (std::min(1.0f, std::fabs(v)) * HALF));
               lv_obj_set_style_bg_color(bars[i], lv_color_hex(v >= 0 ? ${c_green} : ${c_red}), 0);
               lv_obj_set_size(bars[i], BAR_W, h);
@@ -726,7 +740,7 @@ lvgl:
             height: 150
             scrollable: false
             widgets:
-              - label: { x: 14, y: 8, text: "Corrente venduta e comprata, ultime 24 ore", text_font: f_body }
+              - label: { x: 14, y: 8, text: "Ultime 24 ore", text_font: f_body }
               - obj:
                   styles: st_flat
                   align: TOP_RIGHT

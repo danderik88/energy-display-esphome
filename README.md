@@ -30,7 +30,7 @@ Waveshare ESP32-S3-Touch-LCD-7: 800x480 RGB panel driven with `rpi_dpi_rgb`, 8 M
 - **Forecast popup** — tapping the weather opens 8 hourly forecasts (every 2 hours) and 5 daily ones. The strings come from a Home Assistant template sensor, see below.
 - **Weather** — current conditions and temperature from `weather.home`; the forecast arrives pre-formatted from HA because the display cannot call services.
 - **Big-load reminder** — shown 10:30–12:30 when today's forecast beats `reminder_forecast_kwh`, with the text in `reminder_text`.
-- **Screensaver** — after 60 s idle a big clock replaces the dashboard. At night (22:00–06:30) the backlight turns off after 10 minutes untouched; any touch wakes it and returns to the main page.
+- **Screensaver** — after 60 s idle a big clock replaces the dashboard; 30 s later its text dims (the backlight itself is on/off only). At night (22:00–06:30) the backlight turns off after 10 minutes untouched; any touch wakes it and returns to the main page.
 
 ## Forecast popup (needs one HA template sensor)
 

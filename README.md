@@ -8,10 +8,12 @@ Taken from the desktop simulator with demo data.
 
 | | |
 |---|---|
-| ![Pellet profile, green](docs/pellet.png)<br>Pellet profile, green semaforo: a lot of export | ![Pellet profile, red](docs/pellet_red.png)<br>Red semaforo: importing from the grid |
-| ![Gas profile](docs/gas.png)<br>Gas boiler profile | ![Heat pump profile](docs/heatpump.png)<br>Heat pump profile |
-| ![Pellet popup](docs/pellet_popup.png)<br>Pellet boiler popup | ![Heat pump popup](docs/heatpump_popup.png)<br>Heat pump popup |
-| ![Gas and EV popup](docs/gas_ev_popup.png)<br>Gas boiler + car charging popup | ![Screensaver](docs/saver.png)<br>Screensaver, shown after 60 s idle |
+| ![Pellet profile, green](docs/pellet.png)<br>Pellet profile, green semaforo: a lot of export | ![Pellet profile, yellow](docs/pellet_yellow.png)<br>Yellow semaforo: battery charging, sun nearly enough |
+| ![Pellet profile, red](docs/pellet_red.png)<br>Red semaforo: importing from the grid | ![Gas profile](docs/gas.png)<br>Gas boiler profile |
+| ![Heat pump profile](docs/heatpump.png)<br>Heat pump profile | ![Pellet popup](docs/pellet_popup.png)<br>Pellet boiler popup |
+| ![Heat pump popup](docs/heatpump_popup.png)<br>Heat pump popup | ![Gas and EV popup](docs/gas_ev_popup.png)<br>Gas boiler + car charging popup |
+| ![Weather popup](docs/weather_popup.png)<br>Forecast popup: 8 hourly and 5 daily forecasts | ![Info popup](docs/info_popup.png)<br>Info popup: how to read the semaforo |
+| ![Screensaver](docs/saver.png)<br>Screensaver, shown after 60 s idle | |
 
 ## Hardware
 
@@ -20,12 +22,73 @@ Waveshare ESP32-S3-Touch-LCD-7: 800x480 RGB panel driven with `rpi_dpi_rgb`, 8 M
 ## What it shows
 
 - **Semaforo** — green above `${green_export_w}` (2500 W) exported, yellow in between, red above `${red_import_w}` (800 W) imported. Both are calibration knobs in `ui.yaml`; grid values are averaged over 30 s so the colour does not flicker.
+  Yellow is not one message: it reads `batt_dis_w` and `batt_chg_w` (> 200 W) and says "Andiamo a batteria" while the battery is discharging, "La batteria si sta caricando" while it is charging (green is coming), "Prendiamo un po' dalla rete" for a small grid import above 50 W, and "Il sole basta per la casa" when the sun covers the house.
 - **Pills** — `Rete` (grid, or "Rete a zero"), `Casa` (house load) and battery percentage.
 - **Last 24 hours chart** — scrolling window, newest on the right ("ora"): one bar per 15 minutes, green upward for exported energy, red downward for imported, scaled to `chart_full_scale_w`; hour labels move with the bars. Saved to flash once per completed slot (under 1 KB, ~96 writes a day) and restored after a reboot.
 - **Info button** — the (i) next to the weather opens a short "how to read it" popup.
-- **Weather** — current conditions and temperature only (a forecast would need a service call, which is off-limits here).
+- **Forecast popup** — tapping the weather opens 8 hourly forecasts (every 2 hours) and 5 daily ones. The strings come from a Home Assistant template sensor, see below.
+- **Weather** — current conditions and temperature from `weather.home`; the forecast arrives pre-formatted from HA because the display cannot call services.
 - **Big-load reminder** — shown 10:30–12:30 when today's forecast beats `reminder_forecast_kwh`, with the text in `reminder_text`.
 - **Screensaver** — after 60 s idle a big clock replaces the dashboard. At night (22:00–06:30) the backlight turns off after 10 minutes untouched; any touch wakes it and returns to the main page.
+
+## Forecast popup (needs one HA template sensor)
+
+The popup shows 8 hourly forecasts (one every 2 hours) and 5 daily ones. The display is read-only and cannot call `weather.get_forecasts`, so Home Assistant does it **once an hour** and publishes the result as two plain strings. Add this to a package in HA, on top of `weather.home`:
+
+```yaml
+template:
+  - triggers:
+      - trigger: time_pattern
+        hours: "/1"
+      - trigger: homeassistant
+        event: start
+    actions:
+      - action: weather.get_forecasts
+        target:
+          entity_id: weather.home
+        data:
+          type: hourly
+        response_variable: hourly
+      - action: weather.get_forecasts
+        target:
+          entity_id: weather.home
+        data:
+          type: daily
+        response_variable: daily
+      - variables:
+          # HH|condition|temp;...   (every 2nd hourly entry, 8 of them)
+          orarie: >-
+            {% set ns = namespace(out=[]) %}
+            {% for f in hourly['weather.home'].forecast[::2][:8] %}
+              {% set ns.out = ns.out + [f.datetime[11:13] ~ '|' ~ f.condition ~ '|' ~ (f.temperature | round(0) | int)] %}
+            {% endfor %}
+            {{ ns.out | join(';') }}
+          # YYYY-MM-DD|condition|max|min|rain%;...
+          giornaliere: >-
+            {% set ns = namespace(out=[]) %}
+            {% for f in daily['weather.home'].forecast[:5] %}
+              {% set ns.out = ns.out + [f.datetime[:10] ~ '|' ~ f.condition ~ '|' ~ (f.temperature | round(0) | int) ~ '|' ~ (f.templow | round(0) | int) ~ '|' ~ (f.precipitation_probability | default(0) | int)] %}
+            {% endfor %}
+            {{ ns.out | join(';') }}
+    sensor:
+      - name: "Display meteo previsioni"
+        unique_id: display_meteo_previsioni
+        state: "{{ now().strftime('%Y-%m-%d %H:%M') }}"
+        attributes:
+          orarie: "{{ orarie }}"
+          giornaliere: "{{ giornaliere }}"
+```
+
+Then point the display at it in `firmware/energy-display.yaml`:
+
+```yaml
+substitutions:
+  e_forecast: sensor.display_meteo_previsioni   # attributes: orarie, giornaliere
+```
+
+The firmware reads those two attributes verbatim and parses `|` and `;`; an empty or `unknown` string makes the popup say "Previsioni non disponibili". Accepted conditions are the standard HA ones (`sunny`, `partlycloudy`, `cloudy`, `fog`, `rainy`, `pouring`, `lightning`, `lightning-rainy`, `snowy`, `snowy-rainy`, `hail`, `windy`, `clear-night`).
+
+After a `template.reload` (or a restart without the start trigger firing yet) the sensor stays `unknown` until the first hourly trigger — wait for the top of the hour once.
 
 ## Tiles = modules
 
@@ -34,7 +97,7 @@ The four bottom slots are filled by modules from `firmware/tiles/`. Each one dec
 | Module | Shows | Required vars |
 |---|---|---|
 | `boiler_pellet.yaml` | Pellet boiler: temp, state, flue gas, two heating circuits, hours to maintenance; popup | `slot, temp, state, flue, flow1, flow2, maint, circuit1_name, circuit2_name` |
-| `dhw.yaml` | Domestic hot water tank: temp, pump state, heat source label | `slot, temp, pump, source` |
+| `dhw.yaml` | Domestic hot water tank: temp, pump state, heat source label | `slot, temp, pump, on_below, off_at, source` |
 | `pellet_hopper.yaml` | Pellet store level with ash-box warning and usage counters | `slot, level, ash_hours, used, total` |
 | `pv.yaml` | Solar production today plus grid exchange (uses `fc_today_kwh` / `fc_tomorrow_kwh` from the device file) | `slot, pv_today, exported_today, imported_today` |
 | `boiler_gas.yaml` | Gas boiler: flow temp, flame, modulation, gas today, pressure | `slot, flow_temp, flame, modulation, gas_today, pressure` |
@@ -108,7 +171,18 @@ Runs the whole UI in an SDL window with fake data — no hardware needed. Requir
 esphome run firmware/sim_pellet.yaml     # or sim_gas.yaml / sim_heatpump.yaml
 ```
 
-Environment variables (from `sim_base.yaml`): `SIM_RED=1` red scenario, `SIM_SAVER=1` open the screensaver, `SIM_POPUP=1..4` open a tile popup, `SIM_SHOT=/path.bmp` save a screenshot after ~20 s and exit.
+Environment variables (from `sim_base.yaml`):
+
+| Variable | Effect |
+|---|---|
+| `SIM_RED=1` | Red semaforo, importing from the grid |
+| `SIM_CHARGE=1` | Yellow semaforo, battery charging |
+| `SIM_RAIN=1` | Rainy current weather icon |
+| `SIM_SAVER=1` | Open the screensaver |
+| `SIM_POPUP=1..4` | Open the popup of that tile slot |
+| `SIM_POPUP=9` | Open the info popup |
+| `SIM_WEATHER=1` | Open the forecast popup |
+| `SIM_SHOT=/path.bmp` | Save a screenshot after ~20 s and exit |
 
 On macOS, if the C++ headers are not found:
 

@@ -10,6 +10,6 @@ packages:
   base: !include sim_base.yaml
   ui: !include ui.yaml
   tile1: !include { file: tiles/boiler_pellet.yaml, vars: { slot: 1, temp: sensor.a, state: sensor.b, flue: sensor.c, flow1: sensor.d, flow2: sensor.e, maint: sensor.f, circuit1_name: "Mandata zona 1", circuit2_name: "Mandata zona 2" } }
-  tile2: !include { file: tiles/dhw.yaml, vars: { slot: 2, temp: sensor.g, pump: sensor.h, source: "caldaia a pellet" } }
+  tile2: !include { file: tiles/dhw.yaml, vars: { slot: 2, temp: sensor.g, pump: sensor.h, on_below: number.p, off_at: number.q, source: "caldaia a pellet" } }
   tile3: !include { file: tiles/pellet_hopper.yaml, vars: { slot: 3, level: sensor.i, ash_hours: sensor.j, used: sensor.k, total: sensor.l } }
   tile4: !include { file: tiles/pv.yaml, vars: { slot: 4, pv_today: sensor.m, exported_today: sensor.n, imported_today: sensor.o } }

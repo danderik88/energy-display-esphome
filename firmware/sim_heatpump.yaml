@@ -10,6 +10,6 @@ packages:
   base: !include sim_base.yaml
   ui: !include ui.yaml
   tile1: !include { file: tiles/heatpump.yaml, vars: { slot: 1, power: sensor.a, cop: sensor.b, flow_temp: sensor.c, energy_today: sensor.d } }
-  tile2: !include { file: tiles/dhw.yaml, vars: { slot: 2, temp: sensor.g, pump: sensor.h, source: "pompa di calore" } }
+  tile2: !include { file: tiles/dhw.yaml, vars: { slot: 2, temp: sensor.g, pump: sensor.h, on_below: number.p, off_at: number.q, source: "pompa di calore" } }
   tile3: !include { file: tiles/ev_charger.yaml, vars: { slot: 3, power: sensor.i, energy: sensor.j } }
   tile4: !include { file: tiles/pv.yaml, vars: { slot: 4, pv_today: sensor.m, exported_today: sensor.n, imported_today: sensor.o } }

@@ -41,7 +41,7 @@ packages:
       circuit2_name: "Mandata zona 2"
   tile2: !include
     file: tiles/dhw.yaml
-    vars: { slot: 2, temp: sensor.dhw_temperature, pump: sensor.dhw_pump, source: "caldaia a pellet" }
+    vars: { slot: 2, temp: sensor.dhw_temperature, pump: sensor.dhw_pump, on_below: number.dhw_reheat_below, off_at: number.dhw_target, source: "caldaia a pellet" }
   tile3: !include
     file: tiles/pellet_hopper.yaml
     vars:

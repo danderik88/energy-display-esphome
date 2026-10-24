@@ -1,8 +1,11 @@
 ## Tile: domestic hot water tank
-## vars: slot (1-4), temp (°C), pump (% or 0/1, 0 = idle), source (text, e.g. "caldaia a pellet")
+## vars: slot (1-4), temp (°C), pump (% or 0/1, 0 = idle), on_below (°C, reheats below this),
+##       off_at (°C, target), source (text, e.g. "caldaia a pellet"). on_below/off_at may be number entities (read only).
 sensor:
   - { platform: homeassistant, id: dhw_temp, entity_id: "${temp}" }
   - { platform: homeassistant, id: dhw_pump, entity_id: "${pump}" }
+  - { platform: homeassistant, id: dhw_on, entity_id: "${on_below}" }
+  - { platform: homeassistant, id: dhw_off, entity_id: "${off_at}" }
 
 script:
   - id: tile_fill_${slot}
@@ -12,12 +15,13 @@ script:
     then:
       - lambda: |-
           float pump = id(dhw_pump).state;
+          std::string on_c = ui::fmt(id(dhw_on).state, "%.0f °C"), off_c = ui::fmt(id(dhw_off).state, "%.0f °C");
           ui::popup("\U000F1A85", 0x4FA3F7, "Acqua calda", ui::fmt(id(dhw_temp).state, "%.0f°C"),
-              "Temperatura nel boiler\nPompa di carico\nRiscaldata da",
-              ui::fmt(id(dhw_temp).state, "%.0f°C") + "\n"
+              "Temperatura nel boiler\nRiparte sotto i\nSi ferma a\nPompa di carico\nRiscaldata da",
+              ui::fmt(id(dhw_temp).state, "%.0f°C") + "\n" + on_c + "\n" + off_c + "\n"
                   + (std::isnan(pump) ? "--" : pump > 0 ? "in funzione" : "ferma") + "\n${source}",
-              "L'acqua calda è nel boiler e viene riscaldata quando si raffredda. Docce brevi e "
-              "lavatrici a 30-40 °C fanno risparmiare energia.");
+              "Quando l'acqua nel boiler scende sotto i " + on_c + ", la pompa parte e l'acqua viene scaldata "
+              "fino a " + off_c + ", poi si ferma. Docce brevi e lavatrici a 30-40 °C fanno risparmiare energia.");
   - id: tile_demo_${slot}
     then:
-      - lambda: 'id(dhw_temp).publish_state(58); id(dhw_pump).publish_state(0);'
+      - lambda: 'id(dhw_temp).publish_state(58); id(dhw_pump).publish_state(0); id(dhw_on).publish_state(55); id(dhw_off).publish_state(65);'

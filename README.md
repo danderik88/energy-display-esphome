@@ -13,6 +13,7 @@ Taken from the desktop simulator with demo data.
 | ![Heat pump profile](docs/heatpump.png)<br>Heat pump profile | ![Pellet popup](docs/pellet_popup.png)<br>Pellet boiler popup |
 | ![Heat pump popup](docs/heatpump_popup.png)<br>Heat pump popup | ![Gas and EV popup](docs/gas_ev_popup.png)<br>Gas boiler + car charging popup |
 | ![Weather popup](docs/weather_popup.png)<br>Forecast popup: 8 hourly and 5 daily forecasts | ![Info popup](docs/info_popup.png)<br>Info popup: how to read the semaforo |
+| ![Hot water popup](docs/dhw_popup.png)<br>Hot water popup: last 24 h, orange while reheating | |
 | ![Screensaver](docs/saver.png)<br>Screensaver, shown after 60 s idle | |
 
 ## Hardware
@@ -97,7 +98,7 @@ The four bottom slots are filled by modules from `firmware/tiles/`. Each one dec
 | Module | Shows | Required vars |
 |---|---|---|
 | `boiler_pellet.yaml` | Pellet boiler: temp, state, flue gas, two heating circuits, hours to maintenance; popup | `slot, temp, state, flue, flow1, flow2, maint, circuit1_name, circuit2_name` |
-| `dhw.yaml` | Domestic hot water tank: temp, pump state, heat source label | `slot, temp, pump, on_below, off_at, source` |
+| `dhw.yaml` | Domestic hot water tank: temp, reheat thresholds, pump state; popup with a 24 h temperature chart (orange while reheating, saved to flash) | `slot, temp, pump, on_below, off_at, source` |
 | `pellet_hopper.yaml` | Pellet store level with ash-box warning and usage counters | `slot, level, ash_hours, used, total` |
 | `pv.yaml` | Solar production today plus grid exchange (uses `fc_today_kwh` / `fc_tomorrow_kwh` from the device file) | `slot, pv_today, exported_today, imported_today` |
 | `boiler_gas.yaml` | Gas boiler: flow temp, flame, modulation, gas today, pressure | `slot, flow_temp, flame, modulation, gas_today, pressure` |

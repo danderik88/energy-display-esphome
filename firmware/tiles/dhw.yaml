@@ -7,7 +7,135 @@ sensor:
   - { platform: homeassistant, id: dhw_on, entity_id: "${on_below}" }
   - { platform: homeassistant, id: dhw_off, entity_id: "${off_at}" }
 
+interval:
+  - interval: 30s
+    startup_delay: 6s
+    then:
+      - script.execute: { id: dhw_hist, mode: 0 }
+
 script:
+  # Hot water: last 24 h of boiler temperature, one column per 15 min, orange while heating.
+  # mode 0 = sample (interval), 1 = draw and show (popup), 2 = hide. Saved to flash like the main chart.
+  - id: dhw_hist
+    parameters:
+      mode: int
+    then:
+      - lambda: |-
+          static const int N = 96, SLOT_S = 900, PITCH = 6, BAR_W = 4, H = 62, X0 = 56;
+          static float sum[N], cnt[N];
+          static uint8_t heat[N];
+          static int32_t stamp[N];
+          struct Saved { int32_t stamp[N]; float avg[N]; uint8_t heat[N]; };
+          static ESPPreferenceObject pref;
+          static int32_t saved_slot = -1;
+          static bool loaded = false;
+          static lv_obj_t *box = nullptr, *bars[N], *ref[2], *refl[2];
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) return;
+          int32_t cur = now.timestamp / SLOT_S;
+          if (!loaded) {
+            loaded = true;
+            for (int i = 0; i < N; i++) stamp[i] = -1;
+            pref = global_preferences->make_preference<Saved>(fnv1_hash("dhw24h"));
+            Saved sv;
+            if (pref.load(&sv))
+              for (int i = 0; i < N; i++)
+                if (sv.stamp[i] > cur - N && sv.stamp[i] <= cur && !std::isnan(sv.avg[i])) {
+                  stamp[i] = sv.stamp[i]; sum[i] = sv.avg[i]; cnt[i] = 1; heat[i] = sv.heat[i];
+                }
+            saved_slot = cur;
+            bool any = false;
+            for (int i = 0; i < N; i++) any |= stamp[i] >= 0;
+            if (${chart_demo} && !any) {  // simulator: synthetic reheat cycles
+              float t = 63;
+              for (int k = N - 1; k >= 1; k--) {
+                int32_t a = cur - k;
+                int c = a % N;
+                bool h = t < 55.5f;
+                t = h ? 65 : t - (k % 9 == 0 ? 3.0f : 0.6f);
+                stamp[c] = a; sum[c] = t; cnt[c] = 1; heat[c] = h;
+              }
+            }
+          }
+          if (mode == 0) {
+            float t = id(dhw_temp).state, pump = id(dhw_pump).state;
+            if (std::isnan(t)) return;
+            int c = cur % N;
+            if (stamp[c] != cur) { stamp[c] = cur; sum[c] = 0; cnt[c] = 0; heat[c] = 0; }
+            sum[c] += t; cnt[c] += 1;
+            if (!std::isnan(pump) && pump > 0) heat[c] = 1;
+            if (cur != saved_slot) {
+              Saved sv;
+              for (int i = 0; i < N; i++) {
+                sv.stamp[i] = cnt[i] > 0 ? stamp[i] : -1;
+                sv.avg[i] = cnt[i] > 0 ? sum[i] / cnt[i] : NAN;
+                sv.heat[i] = heat[i];
+              }
+              pref.save(&sv);
+              saved_slot = cur;
+            }
+            return;
+          }
+          if (box == nullptr) {
+            box = lv_obj_create(lv_obj_get_parent(ui::pop[6]));
+            lv_obj_remove_style_all(box);
+            lv_obj_set_pos(box, 24, 228);
+            for (auto *&e : ui::pop_extra) if (e == nullptr) { e = box; break; }
+            lv_obj_set_size(box, 632, H + 24);
+            lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
+            for (int i = 0; i < 2; i++) {
+              ref[i] = lv_obj_create(box);
+              lv_obj_remove_style_all(ref[i]);
+              lv_obj_set_style_bg_opa(ref[i], LV_OPA_COVER, 0);
+              lv_obj_set_style_bg_color(ref[i], lv_color_hex(0x46505B), 0);
+              lv_obj_set_size(ref[i], N * PITCH, 1);
+              refl[i] = lv_label_create(box);
+              lv_obj_set_style_text_font(refl[i], id(f_small), 0);
+              lv_obj_set_style_text_color(refl[i], lv_color_hex(${c_muted}), 0);
+            }
+            for (int i = 0; i < N; i++) {
+              bars[i] = lv_obj_create(box);
+              lv_obj_remove_style_all(bars[i]);
+              lv_obj_set_style_bg_opa(bars[i], LV_OPA_COVER, 0);
+              lv_obj_set_style_radius(bars[i], 1, 0);
+            }
+            lv_obj_t *l = lv_label_create(box);
+            lv_obj_set_style_text_font(l, id(f_small), 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(${c_muted}), 0);
+            lv_label_set_text(l, "24 ore fa");
+            lv_obj_set_pos(l, X0, H + 4);
+            l = lv_label_create(box);
+            lv_obj_set_style_text_font(l, id(f_small), 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(${c_muted}), 0);
+            lv_label_set_text(l, "ora");
+            lv_obj_set_pos(l, X0 + N * PITCH - 24, H + 4);
+          }
+          if (mode == 2) { lv_obj_add_flag(box, LV_OBJ_FLAG_HIDDEN); return; }
+          lv_obj_remove_flag(box, LV_OBJ_FLAG_HIDDEN);
+          float on = id(dhw_on).state, off = id(dhw_off).state;
+          if (std::isnan(on)) on = 55;
+          if (std::isnan(off)) off = 65;
+          float lo = on - 6, hi = off + 3;
+          auto ypos = [&](float t) { return (int) (H - std::max(0.0f, std::min(1.0f, (t - lo) / (hi - lo))) * H); };
+          float lines[2] = {on, off};
+          for (int i = 0; i < 2; i++) {
+            lv_obj_set_pos(ref[i], X0, ypos(lines[i]));
+            lv_label_set_text(refl[i], (std::to_string((int) lines[i]) + "°").c_str());
+            lv_obj_set_pos(refl[i], 0, ypos(lines[i]) - 9);
+          }
+          for (int i = 0; i < N; i++) {
+            int32_t a = cur - (N - 1) + i;
+            int c = a % N;
+            if (stamp[c] == a && cnt[c] > 0) {
+              int y = ypos(sum[c] / cnt[c]);
+              lv_obj_set_style_bg_color(bars[i], lv_color_hex(heat[c] ? ${c_orange} : ${c_blue}), 0);
+              lv_obj_set_size(bars[i], BAR_W, std::max(2, H - y));
+              lv_obj_set_pos(bars[i], X0 + i * PITCH, y);
+            } else {
+              lv_obj_set_size(bars[i], BAR_W, 0);
+            }
+          }
+
   - id: tile_fill_${slot}
     then:
       - lambda: 'ui::tile(${slot}, "\U000F1A85", 0x4FA3F7, ui::fmt(id(dhw_temp).state, "%.0f°C"), "Acqua calda");'
@@ -17,11 +145,13 @@ script:
           float pump = id(dhw_pump).state;
           std::string on_c = ui::fmt(id(dhw_on).state, "%.0f °C"), off_c = ui::fmt(id(dhw_off).state, "%.0f °C");
           ui::popup("\U000F1A85", 0x4FA3F7, "Acqua calda", ui::fmt(id(dhw_temp).state, "%.0f°C"),
-              "Temperatura nel boiler\nRiparte sotto i\nSi ferma a\nPompa di carico\nRiscaldata da",
-              ui::fmt(id(dhw_temp).state, "%.0f°C") + "\n" + on_c + "\n" + off_c + "\n"
-                  + (std::isnan(pump) ? "--" : pump > 0 ? "in funzione" : "ferma") + "\n${source}",
-              "Quando l'acqua nel boiler scende sotto i " + on_c + ", la pompa parte e l'acqua viene scaldata "
-              "fino a " + off_c + ", poi si ferma. Docce brevi e lavatrici a 30-40 °C fanno risparmiare energia.");
+              "Riparte sotto i\nSi ferma a\nPompa di carico",
+              on_c + "\n" + off_c + "\n" + (std::isnan(pump) ? "--" : pump > 0 ? "in funzione" : "ferma"),
+              "In arancione quando viene scaldata l'acqua. Docce brevi e lavatrici a 30-40 °C fanno risparmiare energia.");
+          id(dhw_hist).execute(1);
+          lv_obj_set_y(ui::pop[6], 318);
   - id: tile_demo_${slot}
     then:
-      - lambda: 'id(dhw_temp).publish_state(58); id(dhw_pump).publish_state(0); id(dhw_on).publish_state(55); id(dhw_off).publish_state(65);'
+      - lambda: |-
+          id(dhw_temp).publish_state(58); id(dhw_pump).publish_state(0);
+          id(dhw_on).publish_state(55); id(dhw_off).publish_state(65);

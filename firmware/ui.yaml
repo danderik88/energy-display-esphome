@@ -346,6 +346,9 @@ script:
   - id: popup_fill
     then:
       - lambda: |-
+          // popups start from the plain layout; a module may add extras (e.g. the hot water chart)
+          for (auto *e : ui::pop_extra) if (e != nullptr) lv_obj_add_flag(e, LV_OBJ_FLAG_HIDDEN);
+          lv_obj_set_y(ui::pop[6], 278);
           switch (id(pop_which)) {
             case 1: id(tile_popup_1).execute(); break;
             case 2: id(tile_popup_2).execute(); break;

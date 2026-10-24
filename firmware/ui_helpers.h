@@ -29,6 +29,7 @@ constexpr uint32_t MUTED = 0xA9B4BF;
 struct Tile { lv_obj_t *icon_bg, *icon, *val, *cap; };
 inline Tile tiles[5];
 inline lv_obj_t *pop[7];  // icon_bg, icon, title, value, names, vals, text
+inline lv_obj_t *pop_extra[4];  // extra popup widgets owned by modules, hidden before each popup
 
 inline void tile(int slot, const char *glyph, uint32_t col, const std::string &val, const std::string &cap,
                  uint32_t cap_col = MUTED) {

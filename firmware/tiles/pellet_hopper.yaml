@@ -21,8 +21,8 @@ script:
               "Serbatoio della caldaia\nBruciati dall'azzeramento\nBruciati in totale\nOre alla pulizia cenere",
               ui::fmt(id(ph_level).state, "%.0f%%") + "\n" + ui::fmt(id(ph_used).state, "%.2f t") + "\n"
                   + ui::fmt(id(ph_total).state, "%.1f t") + "\n" + ui::fmt(id(ph_ash).state, "%.0f h"),
-              "Il serbatoio accanto alla caldaia si ricarica dal deposito. Quando le ore alla pulizia "
-              "scendono vicino a zero, va svuotato il cassetto della cenere.");
+              "Il serbatoio della caldaia si riempie da solo dal deposito. Quando le ore alla pulizia "
+              "arrivano quasi a zero, bisogna svuotare il cassetto della cenere.");
   - id: tile_demo_${slot}
     then:
       - lambda: |-

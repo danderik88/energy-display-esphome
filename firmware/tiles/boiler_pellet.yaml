@@ -25,8 +25,8 @@ script:
               (ui::bad(st) ? std::string("--") : st) + "\n" + ui::fmt(id(pb_flue).state, "%.0f°C") + "\n"
                   + ui::fmt(id(pb_flow1).state, "%.0f°C") + "\n" + ui::fmt(id(pb_flow2).state, "%.0f°C") + "\n"
                   + ui::fmt(id(pb_maint).state, "%.0f h"),
-              "La caldaia brucia il pellet e scalda l'accumulatore, da cui parte l'acqua per il riscaldamento. "
-              "\"Manten. brace\" significa che è in pausa e tiene accesa la brace per ripartire subito.");
+              "La caldaia brucia il pellet e scalda l'accumulatore, che alimenta il riscaldamento. Se c'è "
+              "scritto \"Manten. brace\" è in pausa e tiene accesa la brace per ripartire subito.");
   - id: tile_demo_${slot}
     then:
       - lambda: |-

@@ -21,7 +21,7 @@ script:
               std::string(std::isnan(p) ? "--" : p > 100 ? "in carica" : "ferma") + "\n"
                   + ui::fmt(p / 1000, "%.1f kW") + "\n" + ui::fmt(id(ev_energy).state, "%.1f kWh"),
               "Se carichi l'auto quando il semaforo è verde, usi corrente che altrimenti venderemmo "
-              "a poco: è il pieno più economico che ci sia.");
+              "per pochi centesimi: è il pieno più economico che ci sia.");
   - id: tile_demo_${slot}
     then:
       - lambda: 'id(ev_power).publish_state(2300); id(ev_energy).publish_state(6.4);'

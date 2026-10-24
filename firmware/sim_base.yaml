@@ -1,6 +1,6 @@
 ## Desktop simulator base (SDL window, fake values). Needs SDL2. Included by sim_*.yaml.
 ## Env: SIM_RED=1 red scenario, SIM_CHARGE=1 yellow: battery charging, SIM_RAIN=1 rainy weather, SIM_SAVER=1 open the screensaver,
-##      SIM_POPUP=1..4 open a tile popup, SIM_SHOT=/path.bmp save a screenshot after ~20 s (then exit).
+##      SIM_POPUP=1..4 open a tile popup (9 = info), SIM_WEATHER=1 open the forecast popup, SIM_SHOT=/path.bmp save a screenshot after ~20 s (then exit).
 
 host:
 
@@ -44,6 +44,12 @@ sensor:
   - { platform: template, id: weather_c, lambda: "return 14.2;" }
 
 text_sensor:
+  - platform: template
+    id: fc_hourly
+    lambda: 'return {"12|rainy|8;14|rainy|9;16|cloudy|9;18|cloudy|8;20|partlycloudy|7;22|clear-night|6;00|clear-night|5;02|fog|4"};'
+  - platform: template
+    id: fc_daily
+    lambda: 'return {"2026-10-24|rainy|9|6|80;2026-10-25|cloudy|12|5|30;2026-10-26|sunny|15|4|0;2026-10-27|partlycloudy|14|6|10;2026-10-28|rainy|11|7|70"};'
   - { platform: template, id: weather_cond, lambda: 'return {getenv("SIM_RAIN") ? "rainy" : "partlycloudy"};' }
 
 interval:
@@ -57,6 +63,7 @@ interval:
             id(tile_demo_3).execute(); id(tile_demo_4).execute();
           }
           if (n == 9 && getenv("SIM_SAVER")) lv_screen_load(id(page_saver)->obj);
+          if (n == 4 && getenv("SIM_WEATHER")) id(wpop_open).execute();
           if (n == 4 && getenv("SIM_POPUP")) id(popup_open)->execute(atoi(getenv("SIM_POPUP")));
           const char *shot = getenv("SIM_SHOT");
           if (n != 10 || shot == nullptr) return;

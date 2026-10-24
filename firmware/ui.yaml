@@ -1,5 +1,5 @@
 ## Core UI shared by the device (energy-display.yaml) and the simulator (sim*.yaml).
-## Expects from the including file: sensors export_w, import_w, load_w, batt_pct, batt_chg_w, batt_dis_w, fc_today_kwh,
+## Expects from the including file: text sensors fc_hourly, fc_daily (forecast strings); sensors export_w, import_w, load_w, batt_pct, batt_chg_w, batt_dis_w, fc_today_kwh,
 ## fc_tomorrow_kwh, weather_c; text sensor weather_cond; time ha_time; output backlight_switch;
 ## and 4 tile modules (tiles/*.yaml) filling slots 1-4.
 
@@ -15,7 +15,7 @@ substitutions:
   reminder_forecast_kwh: "60"
   reminder_text: "Oggi c'è molto sole: accendi i carichi grossi a pranzo"
   # Hint shown when the semaforo is green
-  green_hint: "È il momento giusto per lavatrice, lavastoviglie e auto"
+  green_hint: "Se devi fare lavatrice o lavastoviglie, è il momento giusto"
   # "Domani tanto sole" above this forecast (kWh)
   sunny_tomorrow_kwh: "60"
   # Chart: full bar height at this grid power (W), clamped beyond
@@ -248,6 +248,95 @@ script:
       - script.execute: popup_fill
       - lvgl.widget.show: popup
 
+  # Weather popup: forecasts prepared by HA (template sensor, see README / ENTITA_HA.md)
+  - id: wpop_open
+    then:
+      - lambda: |-
+          static lv_obj_t *hh[8][3], *dd[5][4];
+          lv_obj_t *card = id(wpop_card);
+          auto mk = [&](auto f, int x, int y, int w, uint32_t col) {
+            lv_obj_t *l = lv_label_create(card);
+            lv_obj_set_style_text_font(l, f, 0);
+            lv_obj_set_width(l, w);
+            lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_style_text_color(l, lv_color_hex(col), 0);
+            lv_obj_set_pos(l, x, y);
+            return l;
+          };
+          if (hh[0][0] == nullptr) {
+            for (int i = 0; i < 8; i++) {
+              int x = 24 + i * 79;
+              hh[i][0] = mk(id(f_small), x, 114, 79, ${c_muted});
+              hh[i][1] = mk(id(i_m), x, 136, 79, ${c_sun});
+              hh[i][2] = mk(id(f_body), x, 174, 79, 0xFFFFFF);
+            }
+            for (int i = 0; i < 5; i++) {
+              int x = 24 + i * 126;
+              dd[i][0] = mk(id(f_body), x, 238, 126, 0xFFFFFF);
+              dd[i][1] = mk(id(i_m), x, 266, 126, ${c_sun});
+              dd[i][2] = mk(id(f_body), x, 304, 126, 0xFFFFFF);
+              dd[i][3] = mk(id(f_small), x, 332, 126, ${c_blue});
+            }
+          }
+          auto split = [](const std::string &s, char c) {
+            std::vector<std::string> v;
+            size_t a = 0, b;
+            while ((b = s.find(c, a)) != std::string::npos) { v.push_back(s.substr(a, b - a)); a = b + 1; }
+            v.push_back(s.substr(a));
+            return v;
+          };
+          auto icon = [](const std::string &c) -> const char * {
+            static const std::map<std::string, const char *> I = {
+              {"sunny", "\U000F0599"}, {"clear-night", "\U000F0594"}, {"partlycloudy", "\U000F0595"},
+              {"cloudy", "\U000F0590"}, {"fog", "\U000F0591"}, {"rainy", "\U000F0597"}, {"pouring", "\U000F0596"},
+              {"lightning", "\U000F0593"}, {"lightning-rainy", "\U000F067E"}, {"snowy", "\U000F0598"},
+              {"snowy-rainy", "\U000F067F"}, {"hail", "\U000F0592"}, {"windy", "\U000F059D"}, {"windy-variant", "\U000F059D"}};
+            auto it = I.find(c);
+            return it == I.end() ? "\U000F0026" : it->second;
+          };
+          auto tint = [](const std::string &c) -> uint32_t {
+            return (c == "sunny" || c == "partlycloudy" || c == "clear-night") ? ${c_sun} : 0xA9B4BF;
+          };
+          lv_label_set_text(id(wpop_icon), lv_label_get_text(id(w_icon)));
+          float wt = id(weather_c).state;
+          char tbuf[16];
+          snprintf(tbuf, sizeof tbuf, std::isnan(wt) ? "--" : "%.0f°", wt);
+          lv_label_set_text(id(wpop_now), (std::string("Adesso: ") + lv_label_get_text(id(w_cond)) + ", " + tbuf).c_str());
+          std::string hs = id(fc_hourly).state, ds = id(fc_daily).state;
+          bool none = hs.empty() || hs == "unknown" || hs == "unavailable";
+          lv_label_set_text(id(wpop_empty), none ? "Previsioni non disponibili" : "");
+          auto hv = split(hs, ';');
+          for (int i = 0; i < 8; i++) {
+            auto f = (!none && i < (int) hv.size()) ? split(hv[i], '|') : std::vector<std::string>{};
+            bool ok = f.size() >= 3;
+            lv_label_set_text(hh[i][0], ok ? (f[0] + ":00").c_str() : "");
+            lv_label_set_text(hh[i][1], ok ? icon(f[1]) : "");
+            lv_obj_set_style_text_color(hh[i][1], lv_color_hex(ok ? tint(f[1]) : 0), 0);
+            lv_label_set_text(hh[i][2], ok ? (f[2] + "°").c_str() : "");
+          }
+          static const char *DN[] = {"Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"};
+          auto dv = split(ds, ';');
+          bool dnone = ds.empty() || ds == "unknown" || ds == "unavailable";
+          for (int i = 0; i < 5; i++) {
+            auto f = (!dnone && i < (int) dv.size()) ? split(dv[i], '|') : std::vector<std::string>{};
+            bool ok = f.size() >= 4;
+            std::string day;
+            if (ok) {
+              struct tm t = {};
+              if (sscanf(f[0].c_str(), "%d-%d-%d", &t.tm_year, &t.tm_mon, &t.tm_mday) == 3) {
+                t.tm_year -= 1900; t.tm_mon -= 1; t.tm_hour = 12;
+                mktime(&t);
+                day = i == 0 ? "Oggi" : i == 1 ? "Domani" : DN[t.tm_wday];
+              }
+            }
+            lv_label_set_text(dd[i][0], day.c_str());
+            lv_label_set_text(dd[i][1], ok ? icon(f[1]) : "");
+            lv_obj_set_style_text_color(dd[i][1], lv_color_hex(ok ? tint(f[1]) : 0), 0);
+            lv_label_set_text(dd[i][2], ok ? (f[2] + "° / " + f[3] + "°").c_str() : "");
+            lv_label_set_text(dd[i][3], (ok && f.size() >= 5 && !f[4].empty()) ? ("pioggia " + f[4] + "%").c_str() : "");
+          }
+      - lvgl.widget.show: wpopup
+
   - id: popup_close
     then:
       - lambda: 'id(pop_which) = -1;'
@@ -263,7 +352,7 @@ script:
             case 3: id(tile_popup_3).execute(); break;
             case 4: id(tile_popup_4).execute(); break;
             case 9:  // info button
-              ui::popup("\U000F02FD", ${c_blue}, "Come si legge", "", "Verde\nGiallo\nRosso\nGrafico\nRiquadri in basso", "accendi pure\nva bene così\naspetta, se puoi\nle ultime 24 ore\ntocca per i dettagli", "Il semaforo dice cosa fare adesso. Verde: il sole avanza, accendi lavatrice, lavastoviglie e auto. Rosso: stiamo comprando corrente, meglio aspettare.");
+              ui::popup("\U000F02FD", ${c_blue}, "Come si legge", "", "Verde\nGiallo\nRosso\nGrafico\nRiquadri", "c'è corrente in più: usala\nva bene, ma non accendere altro\nstiamo comprando: se puoi, aspetta\nverde venduta, rosso comprata\ntoccali per i dettagli", "Lavatrice, lavastoviglie, forno e auto consumano tanto: conviene accenderli quando il semaforo è verde.");
               break;
           }
 
@@ -295,25 +384,25 @@ script:
             title = "Dati non disponibili"; sub = "Controlla la connessione a Home Assistant"; saver = "dati assenti";
           } else if (ex >= ${green_export_w}) {
             bg = ${c_green}; bg2 = ${c_green_dk}; icon = "\U000F05A8";
-            title = "Avanza corrente dal sole"; sub = "${green_hint}"; saver = "avanza corrente";
+            title = "Il sole ci dà corrente in più"; sub = "${green_hint}"; saver = "corrente in più";
           } else if (im >= ${red_import_w}) {
             bg = ${c_red}; bg2 = ${c_red_dk}; icon = "\U000F0D3E";
-            title = "Prendiamo corrente dalla rete"; sub = "Se puoi, aspetta il sole per lavatrice e forno"; saver = "prendiamo dalla rete";
+            title = "Stiamo comprando corrente"; sub = "Se puoi, aspetta il sole per lavatrice e forno"; saver = "compriamo corrente";
           } else {
             bg = ${c_yellow}; bg2 = ${c_yellow_dk};
             float dis = id(batt_dis_w).state, chg = id(batt_chg_w).state;
             if (!std::isnan(dis) && dis > 200) {
-              icon = "\U000F0079"; title = "Usiamo la batteria"; saver = "usiamo la batteria";
-              sub = "Il sole non basta, va avanti la batteria";
+              icon = "\U000F0079"; title = "Andiamo a batteria"; saver = "andiamo a batteria";
+              sub = "Il sole non basta: per ora usiamo la batteria";
             } else if (!std::isnan(chg) && chg > 200) {
-              icon = "\U000F0084"; title = "Il sole carica la batteria"; saver = "carichiamo la batteria";
-              sub = "Quando sarà piena, il semaforo diventerà verde";
+              icon = "\U000F0084"; title = "La batteria si sta caricando"; saver = "batteria in carica";
+              sub = "Quando sarà carica, il semaforo diventerà verde";
             } else if (im > 50) {
-              icon = "\U000F0D3E"; title = "Prendiamo poco dalla rete"; saver = "poco dalla rete";
-              sub = "Tutto a posto, ma per ora niente carichi grossi";
+              icon = "\U000F0D3E"; title = "Prendiamo un po' dalla rete"; saver = "un po' dalla rete";
+              sub = "Va bene così, ma per ora non accendere altro";
             } else {
               icon = "\U000F1903"; title = "Il sole basta per la casa"; saver = "il sole basta";
-              sub = "Tutto a posto, ma per ora niente carichi grossi";
+              sub = "Va bene così, ma per ora non accendere altro";
             }
           }
           if (now.is_valid() && !std::isnan(fc) && fc >= ${reminder_forecast_kwh} && bg != ${c_red}) {
@@ -336,7 +425,7 @@ script:
           if (std::isnan(ex)) { set(id(lbl_grid), "Rete --"); color(id(lbl_grid), ${c_text}); }
           else if (ex > 50) { set(id(lbl_grid), "Vendiamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
           else if (im > 50) { set(id(lbl_grid), "Compriamo " + num(im / 1000, "%.1f kW")); color(id(lbl_grid), ${c_red}); }
-          else { set(id(lbl_grid), "Rete: zero"); color(id(lbl_grid), ${c_text}); }
+          else { set(id(lbl_grid), "Niente dalla rete"); color(id(lbl_grid), ${c_text}); }
           set(id(lbl_batt), num(batt, "%.0f%%"));
           lv_bar_set_value(id(bar_batt), std::isnan(batt) ? 0 : (int) batt, LV_ANIM_OFF);
 
@@ -428,10 +517,46 @@ lvgl:
     timeout: 60s
     then:
       - script.execute: popup_close
+      - lvgl.widget.hide: wpopup
       - lvgl.page.show: page_saver
 
   top_layer:
     widgets:
+      - obj:
+          id: wpopup
+          hidden: true
+          x: 0
+          y: 0
+          width: 800
+          height: 480
+          radius: 0
+          border_width: 0
+          pad_all: 0
+          bg_color: 0x000000
+          bg_opa: 65%
+          scrollable: false
+          on_click:
+            - lvgl.widget.hide: wpopup
+          widgets:
+            - obj:
+                id: wpop_card
+                styles: st_panel
+                align: CENTER
+                width: 680
+                height: 420
+                radius: 22
+                bg_color: 0x1D242C
+                clickable: false
+                scrollable: false
+                widgets:
+                  - label: { id: wpop_icon, x: 26, y: 24, text: "", text_font: i_m, text_color: $c_sun }
+                  - label: { x: 70, y: 22, text: "Previsioni", text_font: f_h1 }
+                  - label: { id: wpop_now, align: TOP_RIGHT, x: -26, y: 30, text: "", text_font: f_body, text_color: 0xD5DCE3 }
+                  - obj: { x: 24, y: 80, width: 632, height: 1, bg_color: 0x333C46, bg_opa: COVER, border_width: 0, radius: 0 }
+                  - label: { x: 24, y: 90, text: "Prossime ore", text_font: f_small, styles: st_muted }
+                  - label: { x: 24, y: 214, text: "Prossimi giorni", text_font: f_small, styles: st_muted }
+                  - label: { id: wpop_empty, align: CENTER, text: "", text_font: f_body, styles: st_muted }
+                  - label: { align: BOTTOM_MID, y: -12, text: "tocca per chiudere", text_font: f_small, styles: st_muted }
       - obj:
           id: popup
           hidden: true
@@ -475,7 +600,7 @@ lvgl:
                   - label: { id: pop_value, align: TOP_RIGHT, x: -26, y: 30, text: "", text_font: f_h1 }
                   - obj: { x: 24, y: 96, width: 632, height: 1, bg_color: 0x333C46, bg_opa: COVER, border_width: 0, radius: 0 }
                   - label: { text_font: f_body, id: pop_names, x: 24, y: 110, width: 380, text: "", styles: st_muted, text_line_space: 7 }
-                  - label: { text_font: f_body, id: pop_vals, align: TOP_RIGHT, x: -26, y: 110, width: 250, text_align: RIGHT, text: "", text_line_space: 7 }
+                  - label: { text_font: f_body, id: pop_vals, align: TOP_RIGHT, x: -26, y: 110, width: 430, text_align: RIGHT, text: "", text_line_space: 7 }
                   - label: { text_font: f_body, id: pop_text, x: 24, y: 278, width: 632, long_mode: WRAP, text: "", text_line_space: 4, text_color: 0xD5DCE3 }
                   - label: { align: BOTTOM_MID, y: -12, text: "tocca per chiudere", text_font: f_small, styles: st_muted }
 
@@ -494,6 +619,8 @@ lvgl:
             height: SIZE_CONTENT
             scrollable: false
             layout: { type: flex, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 8 }
+            on_click:
+              - script.execute: wpop_open
             widgets:
               - obj:
                   styles: st_flat

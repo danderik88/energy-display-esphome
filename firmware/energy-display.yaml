@@ -21,6 +21,7 @@ substitutions:
   e_fc_today_kwh: sensor.energy_production_today
   e_fc_tomorrow_kwh: sensor.energy_production_tomorrow
   e_weather_cond: weather.home
+  e_forecast: sensor.display_meteo_previsioni   # HA template sensor with forecast strings (README)
 
 packages:
   ui: !include ui.yaml
@@ -217,6 +218,15 @@ sensor:
     attribute: temperature
 
 text_sensor:
+  # Forecasts prepared by HA (template sensor, see README): "HH|cond|t;..." and "YYYY-MM-DD|cond|max|min|rain%;..."
+  - platform: homeassistant
+    id: fc_hourly
+    entity_id: ${e_forecast}
+    attribute: orarie
+  - platform: homeassistant
+    id: fc_daily
+    entity_id: ${e_forecast}
+    attribute: giornaliere
   - platform: homeassistant
     id: weather_cond
     entity_id: ${e_weather_cond}

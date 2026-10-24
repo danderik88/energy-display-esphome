@@ -1,5 +1,5 @@
 ## Desktop simulator base (SDL window, fake values). Needs SDL2. Included by sim_*.yaml.
-## Env: SIM_RED=1 red scenario, SIM_SAVER=1 open the screensaver,
+## Env: SIM_RED=1 red scenario, SIM_CHARGE=1 yellow: battery charging, SIM_RAIN=1 rainy weather, SIM_SAVER=1 open the screensaver,
 ##      SIM_POPUP=1..4 open a tile popup, SIM_SHOT=/path.bmp save a screenshot after ~20 s (then exit).
 
 host:
@@ -33,16 +33,18 @@ output:
     write_action: []
 
 sensor:
-  - { platform: template, id: export_w, lambda: "return getenv(\"SIM_RED\") ? 0 : 6200;" }
+  - { platform: template, id: export_w, lambda: "return (getenv(\"SIM_RED\") || getenv(\"SIM_CHARGE\")) ? 0 : 6200;" }
   - { platform: template, id: import_w, lambda: "return getenv(\"SIM_RED\") ? 2834 : 0;" }
   - { platform: template, id: load_w, lambda: "return 3100;" }
   - { platform: template, id: batt_pct, lambda: "return 64;" }
+  - { platform: template, id: batt_chg_w, lambda: "return getenv(\"SIM_CHARGE\") ? 1800 : 0;" }
+  - { platform: template, id: batt_dis_w, lambda: "return 0;" }
   - { platform: template, id: fc_today_kwh, lambda: "return 110;" }
   - { platform: template, id: fc_tomorrow_kwh, lambda: "return 86;" }
   - { platform: template, id: weather_c, lambda: "return 14.2;" }
 
 text_sensor:
-  - { platform: template, id: weather_cond, lambda: 'return {"partlycloudy"};' }
+  - { platform: template, id: weather_cond, lambda: 'return {getenv("SIM_RAIN") ? "rainy" : "partlycloudy"};' }
 
 interval:
   - interval: 2s

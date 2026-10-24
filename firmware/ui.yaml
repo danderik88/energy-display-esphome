@@ -1,5 +1,5 @@
 ## Core UI shared by the device (energy-display.yaml) and the simulator (sim*.yaml).
-## Expects from the including file: sensors export_w, import_w, load_w, batt_pct, fc_today_kwh,
+## Expects from the including file: sensors export_w, import_w, load_w, batt_pct, batt_chg_w, batt_dis_w, fc_today_kwh,
 ## fc_tomorrow_kwh, weather_c; text sensor weather_cond; time ha_time; output backlight_switch;
 ## and 4 tile modules (tiles/*.yaml) filling slots 1-4.
 
@@ -13,9 +13,9 @@ substitutions:
   red_import_w: "800"      # importing more than this -> red
   # Big-load reminder: shown 10:30-12:30 when today's forecast exceeds this (kWh)
   reminder_forecast_kwh: "60"
-  reminder_text: "Oggi tanto sole: a pranzo avvia i carichi grossi"
+  reminder_text: "Oggi c'è molto sole: accendi i carichi grossi a pranzo"
   # Hint shown when the semaforo is green
-  green_hint: "Buon momento per lavatrice, lavastoviglie e auto elettrica"
+  green_hint: "È il momento giusto per lavatrice, lavastoviglie e auto"
   # "Domani tanto sole" above this forecast (kWh)
   sunny_tomorrow_kwh: "60"
   # Chart: full bar height at this grid power (W), clamped beyond
@@ -59,6 +59,7 @@ font:
       - "\U000F05A8"  # white-balance-sunny
       - "\U000F1903"  # home-lightning-bolt
       - "\U000F0079"  # battery
+      - "\U000F0084"  # battery-charging
       - "\U000F0D3E"  # transmission-tower
       - "\U000F0026"  # alert
   - file: "fonts/materialdesignicons-webfont.ttf"
@@ -290,16 +291,26 @@ script:
             title = "Dati non disponibili"; sub = "Controlla la connessione a Home Assistant"; saver = "dati assenti";
           } else if (ex >= ${green_export_w}) {
             bg = ${c_green}; bg2 = ${c_green_dk}; icon = "\U000F05A8";
-            title = "C'è sole in avanzo"; sub = "${green_hint}"; saver = "sole in avanzo";
+            title = "Avanza corrente dal sole"; sub = "${green_hint}"; saver = "avanza corrente";
           } else if (im >= ${red_import_w}) {
             bg = ${c_red}; bg2 = ${c_red_dk}; icon = "\U000F0D3E";
-            title = "Stiamo comprando corrente"; sub = "Se puoi, rimanda lavatrice e forno a quando c'è sole"; saver = "compriamo corrente";
+            title = "Prendiamo corrente dalla rete"; sub = "Se puoi, aspetta il sole per lavatrice e forno"; saver = "prendiamo dalla rete";
           } else {
             bg = ${c_yellow}; bg2 = ${c_yellow_dk};
-            bool sun = ex > 0;
-            icon = sun ? "\U000F1903" : "\U000F0079";
-            title = sun ? "Il sole copre i consumi" : "Usiamo la batteria";
-            sub = "Va bene così, non aggiungere carichi grossi"; saver = sun ? "il sole basta" : "usiamo la batteria";
+            float dis = id(batt_dis_w).state, chg = id(batt_chg_w).state;
+            if (!std::isnan(dis) && dis > 200) {
+              icon = "\U000F0079"; title = "Usiamo la batteria"; saver = "usiamo la batteria";
+              sub = "Il sole non basta, va avanti la batteria";
+            } else if (!std::isnan(chg) && chg > 200) {
+              icon = "\U000F0084"; title = "Il sole carica la batteria"; saver = "carichiamo la batteria";
+              sub = "Quando sarà piena, il semaforo diventerà verde";
+            } else if (im > 50) {
+              icon = "\U000F0D3E"; title = "Prendiamo poco dalla rete"; saver = "poco dalla rete";
+              sub = "Tutto a posto, ma per ora niente carichi grossi";
+            } else {
+              icon = "\U000F1903"; title = "Il sole basta per la casa"; saver = "il sole basta";
+              sub = "Tutto a posto, ma per ora niente carichi grossi";
+            }
           }
           if (now.is_valid() && !std::isnan(fc) && fc >= ${reminder_forecast_kwh} && bg != ${c_red}) {
             int m = now.hour * 60 + now.minute;
@@ -319,9 +330,9 @@ script:
           // ── Pills: casa, rete, batteria ──
           set(id(lbl_load), "Casa " + num(id(load_w).state / 1000, "%.1f kW"));
           if (std::isnan(ex)) { set(id(lbl_grid), "Rete --"); color(id(lbl_grid), ${c_text}); }
-          else if (ex > 50) { set(id(lbl_grid), "Diamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
+          else if (ex > 50) { set(id(lbl_grid), "Vendiamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
           else if (im > 50) { set(id(lbl_grid), "Compriamo " + num(im / 1000, "%.1f kW")); color(id(lbl_grid), ${c_red}); }
-          else { set(id(lbl_grid), "Rete a zero"); color(id(lbl_grid), ${c_text}); }
+          else { set(id(lbl_grid), "Rete: zero"); color(id(lbl_grid), ${c_text}); }
           set(id(lbl_batt), num(batt, "%.0f%%"));
           lv_bar_set_value(id(bar_batt), std::isnan(batt) ? 0 : (int) batt, LV_ANIM_OFF);
 
@@ -573,7 +584,7 @@ lvgl:
             height: 150
             scrollable: false
             widgets:
-              - label: { x: 14, y: 8, text: "Ultime 24 ore con la rete", text_font: f_body }
+              - label: { x: 14, y: 8, text: "Corrente venduta e comprata, ultime 24 ore", text_font: f_body }
               - obj:
                   styles: st_flat
                   align: TOP_RIGHT
@@ -585,9 +596,9 @@ lvgl:
                   layout: { type: flex, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 6 }
                   widgets:
                     - obj: { width: 12, height: 12, radius: 6, bg_color: $c_green, border_width: 0 }
-                    - label: { text: "dato  ", text_font: f_small, styles: st_muted }
+                    - label: { text: "venduta  ", text_font: f_small, styles: st_muted }
                     - obj: { width: 12, height: 12, radius: 6, bg_color: $c_red, border_width: 0 }
-                    - label: { text: "comprato", text_font: f_small, styles: st_muted }
+                    - label: { text: "comprata", text_font: f_small, styles: st_muted }
               - label: { align: TOP_RIGHT, x: -10, y: 128, text: "ora", text_font: f_small, styles: st_muted }
               - obj:
                   id: chart_box

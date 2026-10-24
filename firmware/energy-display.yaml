@@ -16,6 +16,8 @@ substitutions:
   e_import_w: sensor.grid_import_power
   e_load_w: sensor.house_load_power
   e_batt_pct: sensor.battery_level
+  e_batt_chg_w: sensor.battery_charging_power      # W, >= 0
+  e_batt_dis_w: sensor.battery_discharging_power   # W, >= 0
   e_fc_today_kwh: sensor.energy_production_today
   e_fc_tomorrow_kwh: sensor.energy_production_tomorrow
   e_weather_cond: weather.home
@@ -190,6 +192,17 @@ sensor:
   - platform: homeassistant
     id: batt_pct
     entity_id: ${e_batt_pct}
+  # Battery flow, both >= 0 W (decides the yellow semaforo message)
+  - platform: homeassistant
+    id: batt_chg_w
+    entity_id: ${e_batt_chg_w}
+    filters:
+      - throttle_average: 30s
+  - platform: homeassistant
+    id: batt_dis_w
+    entity_id: ${e_batt_dis_w}
+    filters:
+      - throttle_average: 30s
   - platform: homeassistant
     id: fc_today_kwh
     entity_id: ${e_fc_today_kwh}

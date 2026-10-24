@@ -24,8 +24,8 @@ script:
               std::string(!known ? "--" : id(gb_flame).state ? "accesa" : "spenta") + "\n"
                   + ui::fmt(id(gb_mod).state, "%.0f%%") + "\n" + ui::fmt(id(gb_gas).state, "%.1f m³") + "\n"
                   + ui::fmt(id(gb_bar).state, "%.1f bar"),
-              "La caldaia scalda l'acqua dei termosifoni e dell'acqua calda. Abbassare di un grado "
-              "il termostato fa risparmiare circa il 6% di gas. La pressione giusta è tra 1 e 2 bar.");
+              "La caldaia scalda sia i termosifoni sia l'acqua di casa. Abbassare il termostato di un grado "
+              "fa risparmiare circa il 6% di gas; la pressione dell'impianto deve stare tra 1 e 2 bar.");
   - id: tile_demo_${slot}
     then:
       - lambda: |-

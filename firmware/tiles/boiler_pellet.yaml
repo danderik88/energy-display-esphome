@@ -21,12 +21,12 @@ script:
       - lambda: |-
           std::string st = id(pb_state).state;
           ui::popup("\U000F0238", 0xFF8A3D, "Caldaia a pellet", ui::fmt(id(pb_temp).state, "%.0f°C"),
-              "Stato\nTemperatura fumi\n${circuit1_name}\n${circuit2_name}\nOre dalla manutenzione",
+              "Stato\nTemperatura fumi\n${circuit1_name}\n${circuit2_name}\nOre dall'ultima manutenzione",
               (ui::bad(st) ? std::string("--") : st) + "\n" + ui::fmt(id(pb_flue).state, "%.0f°C") + "\n"
                   + ui::fmt(id(pb_flow1).state, "%.0f°C") + "\n" + ui::fmt(id(pb_flow2).state, "%.0f°C") + "\n"
                   + ui::fmt(id(pb_maint).state, "%.0f h"),
-              "La caldaia brucia pellet e scalda l'accumulatore, che manda acqua calda all'impianto di "
-              "riscaldamento. \"Manten. brace\" vuol dire che è in pausa: tiene viva la brace per ripartire subito.");
+              "La caldaia brucia il pellet e scalda l'accumulatore, da cui parte l'acqua per il riscaldamento. "
+              "\"Manten. brace\" significa che è in pausa e tiene accesa la brace per ripartire subito.");
   - id: tile_demo_${slot}
     then:
       - lambda: |-

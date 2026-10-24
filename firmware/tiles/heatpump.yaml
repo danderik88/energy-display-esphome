@@ -21,8 +21,8 @@ script:
               "Potenza assorbita\nEfficienza (COP)\nTemperatura mandata\nConsumo oggi",
               ui::fmt(id(hp_power).state / 1000, "%.1f kW") + "\n" + ui::fmt(id(hp_cop).state, "%.1f") + "\n"
                   + ui::fmt(id(hp_flow).state, "%.0f°C") + "\n" + ui::fmt(id(hp_energy).state, "%.1f kWh"),
-              "Con COP 3 ogni kWh di corrente diventa 3 kWh di calore. Quando il semaforo è verde "
-              "la pompa di calore scalda col sole: è il momento di fare l'acqua calda o alzare un grado.");
+              "Con un COP di 3, ogni kWh di corrente diventa 3 kWh di calore. Quando il semaforo è verde "
+              "la pompa di calore va a energia solare: è il momento di scaldare l'acqua o alzare di un grado.");
   - id: tile_demo_${slot}
     then:
       - lambda: |-

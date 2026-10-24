@@ -83,6 +83,7 @@ font:
       - "\U000F0592"  # weather-hail
       - "\U000F0026"  # alert
       - "\U000F0238"  # fire
+      - "\U000F02FD"  # information-outline
       - "\U000F1A85"  # water-thermometer
       - "\U000F0D7C"  # grain
       - "\U000F05A8"  # white-balance-sunny
@@ -261,6 +262,9 @@ script:
             case 2: id(tile_popup_2).execute(); break;
             case 3: id(tile_popup_3).execute(); break;
             case 4: id(tile_popup_4).execute(); break;
+            case 9:  // info button
+              ui::popup("\U000F02FD", ${c_blue}, "Come si legge", "", "Verde\nGiallo\nRosso\nGrafico\nRiquadri in basso", "accendi pure\nva bene così\naspetta, se puoi\nle ultime 24 ore\ntocca per i dettagli", "Il semaforo dice cosa fare adesso. Verde: il sole avanza, accendi lavatrice, lavastoviglie e auto. Rosso: stiamo comprando corrente, meglio aspettare.");
+              break;
           }
 
   - id: refresh
@@ -491,6 +495,14 @@ lvgl:
             scrollable: false
             layout: { type: flex, flex_flow: ROW, flex_align_cross: CENTER, pad_column: 8 }
             widgets:
+              - obj:
+                  styles: st_flat
+                  width: 44
+                  height: 40
+                  on_click:
+                    - script.execute: { id: popup_open, which: 9 }
+                  widgets:
+                    - label: { align: CENTER, text: "\U000F02FD", text_font: i_m, text_color: $c_muted }
               - label: { id: w_icon, text: "\U000F0026", text_font: i_m, text_color: $c_sun }
               - label: { id: w_temp, text: "--", text_font: f_h2, text_color: $c_text }
               - label: { id: w_cond, text: "--", styles: st_muted }

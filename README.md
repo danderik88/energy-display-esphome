@@ -22,6 +22,7 @@ Waveshare ESP32-S3-Touch-LCD-7: 800x480 RGB panel driven with `rpi_dpi_rgb`, 8 M
 - **Semaforo** — green above `${green_export_w}` (2500 W) exported, yellow in between, red above `${red_import_w}` (800 W) imported. Both are calibration knobs in `ui.yaml`; grid values are averaged over 30 s so the colour does not flicker.
 - **Pills** — `Rete` (grid, or "Rete a zero"), `Casa` (house load) and battery percentage.
 - **Last 24 hours chart** — scrolling window, newest on the right ("ora"): one bar per 15 minutes, green upward for exported energy, red downward for imported, scaled to `chart_full_scale_w`; hour labels move with the bars. Saved to flash once per completed slot (under 1 KB, ~96 writes a day) and restored after a reboot.
+- **Info button** — the (i) next to the weather opens a short "how to read it" popup.
 - **Weather** — current conditions and temperature only (a forecast would need a service call, which is off-limits here).
 - **Big-load reminder** — shown 10:30–12:30 when today's forecast beats `reminder_forecast_kwh`, with the text in `reminder_text`.
 - **Screensaver** — after 60 s idle a big clock replaces the dashboard. At night (22:00–06:30) the backlight turns off after 10 minutes untouched; any touch wakes it and returns to the main page.

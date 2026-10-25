@@ -227,21 +227,6 @@ interval:
           }
           for (int k = nh; k < 5; k++) lv_obj_add_flag(hours[k], LV_OBJ_FLAG_HIDDEN);
 
-  # Night: after 10 min untouched, backlight off (a touch wakes it, see script wake)
-  - interval: 30s
-    then:
-      - if:
-          condition:
-            lambda: |-
-              auto now = id(ha_time).now();
-              if (!now.is_valid()) return false;
-              int m = now.hour * 60 + now.minute;
-              bool night = m >= 22 * 60 || m < 6 * 60 + 30;
-              return night && lv_display_get_inactive_time(nullptr) > 600000 && millis() - id(wake_ms) > 600000;
-          then:
-            - output.turn_off: backlight_switch
-            - lvgl.pause:
-
 script:
   - id: wake
     then:
@@ -505,11 +490,11 @@ script:
           // ── Saver: same palette as the app, dimmer at night ──
           auto m = now.is_valid() ? now.hour * 60 + now.minute : 12 * 60;
           bool night = m >= 22 * 60 || m < 6 * 60 + 30;
-          // backlight is on/off only: dim in software after 30 s of screensaver (60 s idle + 30 s)
+          // backlight is on/off only and stays on: dim strongly in software after 30 s of screensaver (60 s idle + 30 s)
           bool dim = night || lv_display_get_inactive_time(nullptr) > 90000;
-          lv_style_set_text_color(id(st_saver), lv_color_hex(dim ? 0x5C6672 : 0xE6EAEE));
-          lv_style_set_text_color(id(st_saver2), lv_color_hex(dim ? 0x3E4650 : 0x8A96A3));
-          lv_obj_set_style_bg_opa(id(saver_dot), dim ? LV_OPA_50 : LV_OPA_COVER, 0);
+          lv_style_set_text_color(id(st_saver), lv_color_hex(dim ? 0x2E343B : 0xE6EAEE));
+          lv_style_set_text_color(id(st_saver2), lv_color_hex(dim ? 0x1F2328 : 0x8A96A3));
+          lv_obj_set_style_bg_opa(id(saver_dot), dim ? LV_OPA_20 : LV_OPA_COVER, 0);
           lv_obj_report_style_change(id(st_saver));
           lv_obj_report_style_change(id(st_saver2));
 

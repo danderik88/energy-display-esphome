@@ -12,6 +12,7 @@ substitutions:
   green_export_w: "2500"   # exporting more than this -> green
   red_import_w: "800"      # importing more than this -> red
   grid_deadband_w: "200"   # grid exchange below this counts as zero (inverter regulation noise)
+  grid_deadband_batt_w: "500"   # wider deadband while the battery covers the house (it regulates to ~0, residue is noise)
   # Big-load reminder: shown 10:30-12:30 when today's forecast exceeds this (kWh)
   reminder_forecast_kwh: "60"
   reminder_text: "Oggi c'è molto sole: accendi i carichi grossi a pranzo"
@@ -395,6 +396,8 @@ script:
           float batt = id(batt_pct).state, fc = id(fc_today_kwh).state;
           auto now = id(ha_time).now();
 
+          float dis = id(batt_dis_w).state, chg = id(batt_chg_w).state;
+          float db = (!std::isnan(dis) && dis > 200) ? ${grid_deadband_batt_w} : ${grid_deadband_w};
           // ── Semaforo ──
           uint32_t bg, bg2;
           const char *icon;
@@ -408,13 +411,12 @@ script:
           } else if (im >= ${red_import_w}) {
             bg = ${c_red}; bg2 = ${c_red_dk}; icon = "\U000F0D3E";
             title = "Stiamo comprando corrente"; sub = "Se puoi, aspetta il sole per lavatrice e forno"; saver = "compriamo corrente";
-          } else if (im > ${grid_deadband_w}) {
+          } else if (im > db) {
             bg = ${c_yellow}; bg2 = ${c_yellow_dk};
             icon = "\U000F0D3E"; title = "Prendiamo un po' dalla rete"; saver = "un po' dalla rete";
             sub = "Niente di grave, ma per ora non accendere altro";
           } else {
             bg = ${c_calm}; bg2 = ${c_calm_dk};
-            float dis = id(batt_dis_w).state, chg = id(batt_chg_w).state;
             if (!std::isnan(dis) && dis > 200) {
               icon = "\U000F0079"; title = "Usiamo il sole di oggi"; saver = "a batteria";
               sub = "La batteria restituisce il sole accumulato: va bene così";
@@ -444,8 +446,8 @@ script:
           // ── Pills: casa, rete, batteria ──
           set(id(lbl_load), "Casa " + num(id(load_w).state / 1000, "%.1f kW"));
           if (std::isnan(ex)) { set(id(lbl_grid), "Rete --"); color(id(lbl_grid), ${c_text}); }
-          else if (ex > ${grid_deadband_w}) { set(id(lbl_grid), "Vendiamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
-          else if (im > ${grid_deadband_w}) { set(id(lbl_grid), "Compriamo " + num(im / 1000, "%.1f kW")); color(id(lbl_grid), ${c_red}); }
+          else if (ex > db) { set(id(lbl_grid), "Vendiamo " + num(ex / 1000, "%.1f kW")); color(id(lbl_grid), ${c_green}); }
+          else if (im > db) { set(id(lbl_grid), "Compriamo " + num(im / 1000, "%.1f kW")); color(id(lbl_grid), ${c_red}); }
           else { set(id(lbl_grid), "Niente dalla rete"); color(id(lbl_grid), ${c_text}); }
           set(id(lbl_batt), num(batt, "%.0f%%"));
           lv_bar_set_value(id(bar_batt), std::isnan(batt) ? 0 : (int) batt, LV_ANIM_OFF);

@@ -949,7 +949,7 @@ lvgl:
               - label: { id: saver_w_temp, text: "--", text_font: f_h2, styles: st_saver2, pad_right: 30 }
               - label: { text: "\U000F0079", text_font: i_m, styles: st_saver2 }
               - label: { id: saver_batt, text: "--", text_font: f_h2, styles: st_saver2 }
-        - label: { id: saver_tip, align: CENTER, y: 172, width: 760, long_mode: DOT, text: "Lavatrice e lavastoviglie costano meno di giorno, col sole", text_font: f_small, styles: st_saver2 }
+        - label: { id: saver_tip, align: CENTER, y: 172, width: 760, long_mode: DOT, text_align: CENTER, text: "Lavatrice e lavastoviglie costano meno di giorno, col sole", text_font: f_small, styles: st_saver2 }
         - label: { align: BOTTOM_MID, y: -20, text: "tocca per vedere tutto", text_font: f_small, styles: st_saver2 }
         # full-screen catcher: any touch goes back to the main page
         - obj:

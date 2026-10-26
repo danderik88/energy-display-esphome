@@ -41,6 +41,10 @@ sensor:
   - { platform: template, id: batt_dis_w, lambda: "return 0;" }
   - { platform: template, id: fc_today_kwh, lambda: "return 110;" }
   - { platform: template, id: fc_tomorrow_kwh, lambda: "return 86;" }
+  - { platform: template, id: fc_next_hour_w, lambda: "return 9400;" }
+  - { platform: template, id: fc_remaining_kwh, lambda: "return 42;" }
+  - { platform: template, id: batt_cap_kwh, lambda: "return 25.6;" }
+  - { platform: template, id: batt_min_soc, lambda: "return 10;" }
   - { platform: template, id: weather_c, lambda: "return 14.2;" }
 
 text_sensor:
@@ -50,6 +54,8 @@ text_sensor:
   - platform: template
     id: fc_daily
     lambda: 'return {"2026-10-24|rainy|9|6|80;2026-10-25|cloudy|12|5|30;2026-10-26|sunny|15|4|0;2026-10-27|partlycloudy|14|6|10;2026-10-28|rainy|11|7|70"};'
+  - { platform: template, id: fc_peak_today, lambda: 'return {"2026-10-26T11:00:00+00:00"};' }
+  - { platform: template, id: inv_state, lambda: 'return {"Run"};' }
   - { platform: template, id: weather_cond, lambda: 'return {getenv("SIM_RAIN") ? "rainy" : "partlycloudy"};' }
 
 interval:

@@ -24,13 +24,16 @@ Waveshare ESP32-S3-Touch-LCD-7: 800x480 RGB panel driven with `rpi_dpi_rgb`, 8 M
 
 - **Semaforo** — green above `${green_export_w}` (2500 W) exported, yellow in between, red above `${red_import_w}` (800 W) imported. Both are calibration knobs in `ui.yaml`; grid values are averaged over 30 s so the colour does not flicker.
   **Blue** means self-sufficient, nothing to do: "Usiamo il sole di oggi" while the battery discharges, "Il sole carica la batteria" while it charges, "Il sole basta per la casa" otherwise (`batt_dis_w` / `batt_chg_w` > 200 W). **Yellow** is only a small grid import between `grid_deadband_w` (200 W) and `red_import_w`; below the deadband the grid pill says "Niente dalla rete" (inverter regulation noise is not shown as buying).
+- **Tip line** — under the semaforo, one practical hint: how long the battery lasts, the best hour for the washing machine (today's forecast peak), "Tra poco cala il sole", or an inverter fault warning.
 - **Pills** — `Rete` (grid, or "Rete a zero"), `Casa` (house load) and battery percentage.
-- **Last 24 hours chart** — scrolling window, newest on the right ("ora"): one bar per 15 minutes, green upward for exported energy, red downward for imported, auto-scaled to the largest bar of the window (at least 1 kW, shown as "max N kW"); hour labels move with the bars. Saved to flash once per completed slot (under 1 KB, ~96 writes a day) and restored after a reboot.
+- **Last 24 hours chart** — scrolling window, newest on the right ("ora"): one bar per 15 minutes, green upward for exported energy, red downward for imported, auto-scaled to the largest bar of the window (at least 1 kW, shown as "max N kW"); hour labels every 2 hours move with the bars. Saved to flash once per completed slot (under 1 KB, ~96 writes a day) and restored after a reboot.
 - **Info button** — the (i) next to the weather opens a short "how to read it" popup.
 - **Forecast popup** — tapping the weather opens 8 hourly forecasts (every 2 hours) and 5 daily ones. The strings come from a Home Assistant template sensor, see below.
 - **Weather** — current conditions and temperature from `weather.home`; the forecast arrives pre-formatted from HA because the display cannot call services.
 - **Big-load reminder** — shown 10:30–12:30 when today's forecast beats `reminder_forecast_kwh`, with the text in `reminder_text`.
 - **Screensaver** — after 60 s idle a big clock replaces the dashboard; 30 s later its text dims (the backlight itself is on/off only). At night (22:00–06:30) the backlight turns off after 10 minutes untouched; any touch wakes it and returns to the main page.
+- **Screensaver tips** — a short energy-saving tip under the status row, rotating every minute.
+- **Solar share** — the solar popup shows bought energy with the share of today's consumption covered by the sun ("13 kWh (sole 71 %)", `consumed_today` var, default `sensor.daily_consumed_energy`).
 
 ## Forecast popup (needs one HA template sensor)
 

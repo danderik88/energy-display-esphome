@@ -1,6 +1,7 @@
 ## Core UI shared by the device (energy-display.yaml) and the simulator (sim*.yaml).
 ## Expects from the including file: text sensors fc_hourly, fc_daily (forecast strings); sensors export_w, import_w, load_w, batt_pct, batt_chg_w, batt_dis_w, fc_today_kwh,
-## fc_tomorrow_kwh, weather_c; text sensor weather_cond; time ha_time; output backlight_switch;
+## fc_tomorrow_kwh, fc_next_hour_w, fc_remaining_kwh, batt_cap_kwh, batt_min_soc, weather_c; text sensors weather_cond, fc_peak_today,
+## inv_state; time ha_time; output backlight_switch;
 ## and 4 tile modules (tiles/*.yaml) filling slots 1-4.
 
 esphome:
@@ -114,6 +115,21 @@ interval:
     then:
       - script.execute: refresh
 
+  # Screensaver tip, rotating once a minute
+  - interval: 60s
+    startup_delay: 5s
+    then:
+      - lambda: |-
+          static const char *TIPS[] = {
+            "Lavatrice e lavastoviglie costano meno di giorno, col sole",
+            "Il forno a mezzogiorno usa la corrente del sole",
+            "Di notte la batteria tiene accesa la casa",
+            "Semaforo verde: buon momento per i lavaggi",
+            "Semaforo rosso: rimanda forno e lavatrice se puoi"};
+          static int i = 0;
+          lv_label_set_text(id(saver_tip), TIPS[i]);
+          i = (i + 1) % 5;
+
   # Last 24 h chart, scrolling: one bar per 15 min, newest on the right.
   # Green up = exported, red down = imported. Hour labels follow the bars.
   # Saved to flash once per completed slot (~96 small writes/day), restored after a reboot.
@@ -122,7 +138,7 @@ interval:
     then:
       - lambda: |-
           static const int N = 96, PITCH = 8, BAR_W = 6, HALF = 46, SLOT_S = 900;
-          static lv_obj_t *bars[N], *hours[5];
+          static lv_obj_t *bars[N], *hours[12];
           static float sum[N], cnt[N];
           static int32_t stamp[N];  // absolute 15-min slot stored in each ring cell
           struct Saved { int32_t stamp[N]; float avg[N]; };
@@ -216,16 +232,16 @@ interval:
             } else {
               lv_obj_set_size(bars[i], BAR_W, 0);
             }
-            // hour label every 6 h, kept clear of the "ora" label on the right
+            // hour label every 2 h, kept clear of the "ora" label on the right
             auto t = ESPTime::from_epoch_local(a * SLOT_S);
-            if (t.minute == 0 && t.hour % 6 == 0 && i < N - 6 && nh < 5) {
+            if (t.minute == 0 && t.hour % 2 == 0 && i < N - 6 && nh < 12) {
               lv_label_set_text(hours[nh], std::to_string(t.hour).c_str());
               lv_obj_set_x(hours[nh], 6 + i * PITCH - (t.hour < 10 ? 4 : 8));
               lv_obj_remove_flag(hours[nh], LV_OBJ_FLAG_HIDDEN);
               nh++;
             }
           }
-          for (int k = nh; k < 5; k++) lv_obj_add_flag(hours[k], LV_OBJ_FLAG_HIDDEN);
+          for (int k = nh; k < 12; k++) lv_obj_add_flag(hours[k], LV_OBJ_FLAG_HIDDEN);
 
 script:
   - id: wake
@@ -425,6 +441,46 @@ script:
           set(id(sem_icon), icon);
           set(id(sem_title), title);
           set(id(sem_sub), sub);
+
+          // ── Tip line (first match wins) ──
+          char tip[64] = "";
+          if (bg != ${c_grey}) {
+            std::string st = id(inv_state).state;
+            std::transform(st.begin(), st.end(), st.begin(), ::tolower);
+            float load = id(load_w).state, cap = id(batt_cap_kwh).state, minsoc = id(batt_min_soc).state;
+            float rem = id(fc_remaining_kwh).state, nxt = id(fc_next_hour_w).state;
+            float hours = 0;
+            bool batt_ok = !std::isnan(dis) && dis > 200 && !std::isnan(batt) && !std::isnan(cap) &&
+                           !std::isnan(minsoc) && !std::isnan(load) && load > 100;
+            if (batt_ok) hours = (batt - minsoc) / 100 * cap * 1000 / load;
+            int peak_h = -1;
+            if (now.is_valid() && sscanf(id(fc_peak_today).state.c_str(), "%*4d-%*2d-%*2dT%d", &peak_h) == 1) {
+              int off = (now.hour - id(ha_time).utcnow().hour + 24) % 24;
+              peak_h = (peak_h + off) % 24;
+            } else {
+              peak_h = -1;
+            }
+            if (st.find("fault") != std::string::npos || st.find("error") != std::string::npos ||
+                st.find("alarm") != std::string::npos) {
+              snprintf(tip, sizeof tip, "Inverter in errore: avvisa l'installatore");
+            } else if (batt_ok && hours > 0 && (hours >= 12 || now.is_valid())) {
+              if (hours >= 12) {
+                snprintf(tip, sizeof tip, "La batteria basta fino a domattina");
+              } else {
+                auto end = ESPTime::from_epoch_local(now.timestamp + (time_t) (hours * 3600));
+                snprintf(tip, sizeof tip, "La batteria basta fino alle ~%02d:%02d", end.hour, end.minute < 30 ? 0 : 30);
+              }
+            } else if (!std::isnan(rem) && rem >= 8) {
+              if (peak_h > now.hour)
+                snprintf(tip, sizeof tip, "Lavatrice e lavastoviglie: meglio verso le %02d", peak_h);
+              else
+                snprintf(tip, sizeof tip, "C'è sole: buon momento per lavatrice e lavastoviglie");
+            } else if (now.is_valid() && now.hour >= 12 && now.hour <= 19 && !std::isnan(nxt) && nxt < 1000 &&
+                       !std::isnan(rem) && rem > 0.5) {
+              snprintf(tip, sizeof tip, "Tra poco cala il sole");
+            }
+          }
+          lv_label_set_text(id(sem_tip), tip);
           lv_obj_set_style_bg_color(id(saver_dot), lv_color_hex(bg), 0);
           set(id(saver_state), saver);
 
@@ -674,7 +730,8 @@ lvgl:
                   widgets:
                     - label: { id: sem_icon, align: CENTER, text: "\U000F0026", text_font: i_xl, text_color: 0xFFFFFF }
               - label: { id: sem_title, x: 126, y: 18, text: "Avvio...", text_font: f_h1, text_color: 0xFFFFFF }
-              - label: { id: sem_sub, x: 128, y: 66, width: 630, long_mode: WRAP, text: "", text_font: f_body, text_color: 0xFFFFFF, text_opa: 88% }
+              - label: { id: sem_sub, x: 128, y: 66, width: 630, height: 26, long_mode: DOT, text: "", text_font: f_body, text_color: 0xFFFFFF, text_opa: 88% }
+              - label: { id: sem_tip, x: 128, y: 96, width: 630, height: 20, long_mode: DOT, text: "", text_font: f_small, text_color: 0xFFFFFF, text_opa: 88% }
 
         # ── Pills: casa / rete / batteria ──
         - obj:
@@ -892,6 +949,7 @@ lvgl:
               - label: { id: saver_w_temp, text: "--", text_font: f_h2, styles: st_saver2, pad_right: 30 }
               - label: { text: "\U000F0079", text_font: i_m, styles: st_saver2 }
               - label: { id: saver_batt, text: "--", text_font: f_h2, styles: st_saver2 }
+        - label: { id: saver_tip, align: CENTER, y: 172, width: 760, long_mode: DOT, text: "Lavatrice e lavastoviglie costano meno di giorno, col sole", text_font: f_small, styles: st_saver2 }
         - label: { align: BOTTOM_MID, y: -20, text: "tocca per vedere tutto", text_font: f_small, styles: st_saver2 }
         # full-screen catcher: any touch goes back to the main page
         - obj:

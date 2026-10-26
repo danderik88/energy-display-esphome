@@ -20,6 +20,13 @@ substitutions:
   e_batt_dis_w: sensor.battery_discharging_power   # W, >= 0
   e_fc_today_kwh: sensor.energy_production_today
   e_fc_tomorrow_kwh: sensor.energy_production_tomorrow
+  # Semaforo tip line (battery runtime, best washing hour, sunset, inverter fault)
+  e_fc_peak_today: sensor.power_highest_peak_time_today   # ISO timestamp (UTC) of today's forecast peak
+  e_fc_next_hour_w: sensor.power_production_next_hour    # W
+  e_fc_remaining_kwh: sensor.energy_production_today_remaining
+  e_batt_cap_kwh: sensor.battery_capacity_high_precision # kWh
+  e_batt_min_soc: sensor.battery_min_soc                 # %
+  e_inv_state: sensor.sungrow_inverter_state             # text: "fault" / "error" / "alarm" shows a warning
   e_weather_cond: weather.home
   e_forecast: sensor.display_meteo_previsioni   # HA template sensor with forecast strings (README)
 
@@ -210,6 +217,18 @@ sensor:
   - platform: homeassistant
     id: fc_tomorrow_kwh
     entity_id: ${e_fc_tomorrow_kwh}
+  - platform: homeassistant
+    id: fc_next_hour_w
+    entity_id: ${e_fc_next_hour_w}
+  - platform: homeassistant
+    id: fc_remaining_kwh
+    entity_id: ${e_fc_remaining_kwh}
+  - platform: homeassistant
+    id: batt_cap_kwh
+    entity_id: ${e_batt_cap_kwh}
+  - platform: homeassistant
+    id: batt_min_soc
+    entity_id: ${e_batt_min_soc}
 
   # Weather: current conditions only (a forecast needs a service call)
   - platform: homeassistant
@@ -230,4 +249,10 @@ text_sensor:
   - platform: homeassistant
     id: weather_cond
     entity_id: ${e_weather_cond}
+  - platform: homeassistant
+    id: fc_peak_today
+    entity_id: ${e_fc_peak_today}
+  - platform: homeassistant
+    id: inv_state
+    entity_id: ${e_inv_state}
 

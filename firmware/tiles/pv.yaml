@@ -1,9 +1,13 @@
 ## Tile: solar production today and grid exchange (uses fc_today_kwh / fc_tomorrow_kwh / weather_cond from the core)
-## vars: slot (1-4), pv_today, exported_today, imported_today (kWh)
+## vars: slot (1-4), pv_today, exported_today, imported_today (kWh); optional consumed_today (kWh, house use today)
+substitutions:
+  consumed_today: sensor.daily_consumed_energy   # default when not set in vars
+
 sensor:
   - { platform: homeassistant, id: pv_today, entity_id: "${pv_today}" }
   - { platform: homeassistant, id: pv_exp, entity_id: "${exported_today}" }
   - { platform: homeassistant, id: pv_imp, entity_id: "${imported_today}" }
+  - { platform: homeassistant, id: pv_load, entity_id: "${consumed_today}" }
 
 script:
   - id: tile_fill_${slot}
@@ -28,13 +32,20 @@ script:
             {"snowy-rainy", "Oggi pioggia e neve: i pannelli producono pochissimo. "}};
           auto wx = WX.find(id(weather_cond).state);
           std::string weather_txt = wx == WX.end() ? "" : wx->second;
+          // bought today, plus the share of today's use covered by the sun
+          std::string bought = ui::fmt(id(pv_imp).state, "%.0f kWh");
+          float impv = id(pv_imp).state, ldv = id(pv_load).state;
+          if (!std::isnan(impv) && !std::isnan(ldv) && ldv >= 0.5) {
+            int pct = std::max(0, std::min(100, (int) (100 * (1 - impv / ldv))));
+            bought += " (sole " + std::to_string(pct) + " %)";
+          }
           ui::popup("\U000F05A8", 0xFFC531, "Fotovoltaico", ui::fmt(id(pv_today).state, "%.0f kWh"),
               "Prodotta oggi\nVenduta oggi\nComprata oggi\nPrevista oggi\nPrevista domani",
               ui::fmt(id(pv_today).state, "%.0f kWh") + "\n" + ui::fmt(id(pv_exp).state, "%.0f kWh") + "\n"
-                  + ui::fmt(id(pv_imp).state, "%.0f kWh") + "\n" + ui::fmt(id(fc_today_kwh).state, "%.0f kWh") + "\n"
+                  + bought + "\n" + ui::fmt(id(fc_today_kwh).state, "%.0f kWh") + "\n"
                   + ui::fmt(id(fc_tomorrow_kwh).state, "%.0f kWh"),
               weather_txt + "La corrente che vendiamo ce la pagano circa ${price_sell_cent} centesimi, "
               "quella che compriamo costa circa ${price_buy_cent}: conviene usarla noi.");
   - id: tile_demo_${slot}
     then:
-      - lambda: 'id(pv_today).publish_state(82.4); id(pv_exp).publish_state(41.3); id(pv_imp).publish_state(12.8);'
+      - lambda: 'id(pv_today).publish_state(82.4); id(pv_exp).publish_state(41.3); id(pv_imp).publish_state(12.8); id(pv_load).publish_state(45.0);'
